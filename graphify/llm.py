@@ -13,6 +13,10 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+from graphify.env import load_env
+
+load_env()
+
 # `_read_files` truncates each file at this many characters before joining into
 # the user message. Token estimates use the same cap so packing matches reality.
 _FILE_CHAR_CAP = 20_000

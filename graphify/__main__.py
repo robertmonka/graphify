@@ -8,6 +8,10 @@ import shutil
 import sys
 from pathlib import Path
 
+from graphify.env import load_env
+
+load_env()
+
 try:
     from importlib.metadata import version as _pkg_version
     __version__ = _pkg_version("graphifyy")
