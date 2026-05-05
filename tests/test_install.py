@@ -104,6 +104,15 @@ def test_codex_skill_contains_spawn_agent():
     assert "spawn_agent" in skill
 
 
+def test_codex_skill_contains_kimi_fast_path():
+    """Codex skill file must document the direct Kimi extraction path."""
+    import graphify
+    skill = (Path(graphify.__file__).parent / "skill-codex.md").read_text()
+    assert "MOONSHOT_API_KEY" in skill
+    assert "extract_corpus_parallel" in skill
+    assert 'backend="kimi"' in skill
+
+
 def test_opencode_skill_contains_mention():
     """OpenCode skill file must reference @mention."""
     import graphify
