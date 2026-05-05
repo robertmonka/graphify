@@ -5,7 +5,10 @@ from pathlib import Path
 import sys
 from unittest.mock import patch
 import re
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - Python < 3.11
+    import tomli as tomllib
 import pytest
 
 
