@@ -354,7 +354,7 @@ Wait for all subagents. For each result:
 
 If more than half the chunks failed or are missing, stop and tell the user to re-run and ensure `subagent_type="general-purpose"` is used.
 
-Merge all chunk files into `.graphify_semantic_new.json`. **After each Agent call completes, read the real token counts from the Agent tool result's `usage` field and write them back into the chunk JSON before merging** — the chunk JSON itself always has placeholder zeros. Then run:
+Merge all chunk files into `graphify-out/.graphify_semantic_new.json`. **After each Agent call completes, read the real token counts from the Agent tool result's `usage` field and write them back into the chunk JSON before merging** — the chunk JSON itself always has placeholder zeros. Then run:
 ```bash
 $(cat graphify-out/.graphify_python) -c "
 import json, glob
@@ -573,7 +573,7 @@ graphify export html  # auto-aggregates to community view if graph > 5000 nodes
 
 **Only run this step if `--wiki` was explicitly given in the original command.**
 
-Run this before Step 9 (cleanup) so `.graphify_labels.json` is still available.
+Run this before Step 9 (cleanup) so `graphify-out/.graphify_labels.json` is still available.
 
 ```bash
 graphify export wiki
@@ -713,7 +713,7 @@ The graph is the map. Your job after the pipeline is to be the guide.
 
 ## Interpreter guard for subcommands
 
-Before running any subcommand below (`--update`, `--cluster-only`, `query`, `path`, `explain`, `add`), check that `.graphify_python` exists. If it's missing (e.g. user deleted `graphify-out/`), re-resolve the interpreter first:
+Before running any subcommand below (`--update`, `--cluster-only`, `query`, `path`, `explain`, `add`), check that `graphify-out/.graphify_python` exists. If it's missing (e.g. user deleted `graphify-out/`), re-resolve the interpreter first:
 
 ```bash
 if [ ! -f graphify-out/.graphify_python ]; then
@@ -804,7 +804,7 @@ if deleted:
 G_existing.update(G_new)
 print(f'Merged: {G_existing.number_of_nodes()} nodes, {G_existing.number_of_edges()} edges')
 
-# Write merged result back to .graphify_extract.json so Step 4 sees the full graph
+# Write merged result back to graphify-out/.graphify_extract.json so Step 4 sees the full graph
 merged_out = {
     'nodes': [{'id': n, **d} for n, d in G_existing.nodes(data=True)],
     'edges': [{'source': u, 'target': v, **d} for u, v, d in G_existing.edges(data=True)],

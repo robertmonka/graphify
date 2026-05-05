@@ -1,7 +1,7 @@
 # Direct LLM backend for semantic extraction — supports Claude, Kimi K2.6,
 # Gemini, and OpenAI.
 # Used by `graphify extract . --backend gemini` and the benchmark scripts.
-# The default graphify pipeline uses Claude Code subagents via skill.md;
+# The default graphify pipeline uses Claude Code subagents via skill-claude.md;
 # this module provides a direct API path for non-Claude-Code environments.
 from __future__ import annotations
 
