@@ -79,3 +79,8 @@ graphify = ["skill-claude.md", "skill-codex.md", "skill-opencode.md", "skill-aid
 
 [tool.bandit]
 skips = ["B404"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]
