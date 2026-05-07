@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "hooks": {
+    "afterFileEdit": [
+      {
+        "command": "graphify update .",
+        "matcher": "Write|TabWrite",
+        "timeout": 300
+      }
+    ],
+    "stop": [
+      {
+        "command": "graphify check-update .",
+        "timeout": 30
+      }
+    ]
+  }
+}

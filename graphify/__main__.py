@@ -220,6 +220,11 @@ _PLATFORM_CONFIG: dict[str, dict] = {
         "skill_dst": Path(".agents") / "skills" / "graphify" / "SKILL.md",
         "claude_md": False,
     },
+    "cursor": {
+        "skill_file": "skill-cursor.md",
+        "skill_dst": Path(".cursor") / "skills" / "graphify" / "SKILL.md",
+        "claude_md": False,
+    },
     "opencode": {
         "skill_file": "skill-opencode.md",
         "skill_dst": Path(".config") / "opencode" / "skills" / "graphify" / "SKILL.md",
@@ -377,7 +382,7 @@ def _print_skill_done() -> None:
 
 def _print_skill_usage() -> None:
     print("Usage: graphify skill <platform> | graphify skill remove <platform>")
-    print("Platforms: claude, windows, codex, opencode, aider, claw, droid, trae, trae-cn, gemini, vscode, copilot, antigravity, hermes, kimi, kiro, pi")
+    print("Platforms: claude, windows, codex, cursor, opencode, aider, claw, droid, trae, trae-cn, gemini, vscode, copilot, antigravity, hermes, kimi, kiro, pi")
 
 
 def _print_setup_usage() -> None:
@@ -391,9 +396,6 @@ def _install_user_skill(platform_name: str) -> None:
         _refresh_all_version_stamps()
         _print_skill_done()
         return
-    if platform_name == "cursor":
-        print("error: Cursor has no user-level graphify skill; use: graphify setup cursor", file=sys.stderr)
-        sys.exit(1)
     if platform_name == "vscode":
         _copy_skill_file(_skill_source("skill-vscode.md"), _platform_skill_destination("copilot"))
         _refresh_all_version_stamps()
@@ -956,6 +958,7 @@ def _antigravity_uninstall(project_dir: Path) -> None:
 
 
 _CURSOR_RULE_PATH = Path(".cursor") / "rules" / "graphify.mdc"
+_CURSOR_HOOKS_PATH = Path(".cursor") / "hooks.json"
 _CURSOR_RULE = """\
 ---
 description: graphify knowledge graph context
@@ -971,27 +974,79 @@ This project has a graphify knowledge graph at graphify-out/.
 
 
 def _cursor_install(project_dir: Path) -> None:
-    """Write .cursor/rules/graphify.mdc with alwaysApply: true."""
-    rule_path = (project_dir or Path(".")) / _CURSOR_RULE_PATH
+    """Write Cursor project rule and hooks."""
+    root = project_dir or Path(".")
+    rule_path = root / _CURSOR_RULE_PATH
     rule_path.parent.mkdir(parents=True, exist_ok=True)
     if rule_path.exists():
         print(f"graphify rule already exists at {rule_path} (no change)")
-        return
-    rule_path.write_text(_CURSOR_RULE, encoding="utf-8")
-    print(f"graphify rule written to {rule_path.resolve()}")
+    else:
+        rule_path.write_text(_CURSOR_RULE, encoding="utf-8")
+        print(f"graphify rule written to {rule_path.resolve()}")
+    _install_cursor_hooks(root)
     print()
-    print("Cursor will now always include the knowledge graph context.")
+    print("Cursor will now always include the knowledge graph context and run graphify hooks.")
     print("Run /graphify . first to build the graph if you haven't already.")
 
 
 def _cursor_uninstall(project_dir: Path) -> None:
-    """Remove .cursor/rules/graphify.mdc."""
-    rule_path = (project_dir or Path(".")) / _CURSOR_RULE_PATH
+    """Remove Cursor graphify rule and hooks."""
+    root = project_dir or Path(".")
+    rule_path = root / _CURSOR_RULE_PATH
+    removed = False
     if not rule_path.exists():
-        print("No graphify Cursor rule found - nothing to do")
-        return
-    rule_path.unlink()
-    print(f"graphify Cursor rule removed from {rule_path.resolve()}")
+        print("No graphify Cursor rule found")
+    else:
+        rule_path.unlink()
+        removed = True
+        print(f"graphify Cursor rule removed from {rule_path.resolve()}")
+    if _uninstall_cursor_hooks(root):
+        removed = True
+    if not removed:
+        print("nothing to do")
+
+
+def _install_cursor_hooks(project_dir: Path) -> None:
+    hooks_path = project_dir / _CURSOR_HOOKS_PATH
+    hooks_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        settings = json.loads(hooks_path.read_text(encoding="utf-8")) if hooks_path.exists() else {}
+    except json.JSONDecodeError:
+        settings = {}
+
+    _remove_graphify_hook_entries(settings)
+    settings["version"] = 1
+    hooks = settings.setdefault("hooks", {})
+    hooks.setdefault("afterFileEdit", []).append({
+        "command": "graphify update .",
+        "matcher": "Write|TabWrite",
+        "timeout": 300,
+    })
+    hooks.setdefault("stop", []).append({
+        "command": "graphify check-update .",
+        "timeout": 30,
+    })
+    hooks_path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+    print(f"  {_CURSOR_HOOKS_PATH}  ->  graphify hooks registered")
+
+
+def _uninstall_cursor_hooks(project_dir: Path) -> bool:
+    hooks_path = project_dir / _CURSOR_HOOKS_PATH
+    if not hooks_path.exists():
+        return False
+    try:
+        settings = json.loads(hooks_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return False
+    before = json.dumps(settings, sort_keys=True)
+    _remove_graphify_hook_entries(settings)
+    if json.dumps(settings, sort_keys=True) == before:
+        return False
+    if "hooks" not in settings:
+        settings["hooks"] = {}
+    hooks_path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+    print(f"  {_CURSOR_HOOKS_PATH}  ->  graphify hooks removed")
+    return True
 
 
 # OpenCode tool.execute.before plugin — fires before every tool call.

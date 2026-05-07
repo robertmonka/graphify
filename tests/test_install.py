@@ -20,6 +20,7 @@ PLATFORMS = {
     "aider": (".aider/graphify/SKILL.md",),
     "copilot": (".copilot/skills/graphify/SKILL.md",),
     "vscode": (".copilot/skills/graphify/SKILL.md",),
+    "cursor": (".cursor/skills/graphify/SKILL.md",),
     "claw": (".openclaw/skills/graphify/SKILL.md",),
     "droid": (".factory/skills/graphify/SKILL.md",),
     "trae": (".trae/skills/graphify/SKILL.md",),
@@ -168,6 +169,11 @@ def test_named_command_parser_accepts_platform_and_remove_forms():
 def test_cli_skill_codex_installs_user_skill(tmp_path):
     _run_main(tmp_path, ["graphify", "skill", "codex"])
     assert (tmp_path / ".agents" / "skills" / "graphify" / "SKILL.md").exists()
+
+
+def test_cli_skill_cursor_installs_user_skill(tmp_path):
+    _run_main(tmp_path, ["graphify", "skill", "cursor"])
+    assert (tmp_path / ".cursor" / "skills" / "graphify" / "SKILL.md").exists()
 
 
 def test_cli_skill_requires_platform(tmp_path):
@@ -574,6 +580,36 @@ def test_cursor_install_idempotent(tmp_path):
     assert rule.read_text() == original
 
 
+def test_cursor_install_writes_hooks_json(tmp_path):
+    """cursor install writes .cursor/hooks.json."""
+    from graphify.__main__ import _cursor_install
+    _cursor_install(tmp_path)
+    hooks_path = tmp_path / ".cursor" / "hooks.json"
+    assert hooks_path.exists()
+    settings = json.loads(hooks_path.read_text())
+    hooks = settings["hooks"]
+    assert settings["version"] == 1
+    assert any(h.get("command") == "graphify update ." for h in hooks["afterFileEdit"])
+    assert any(h.get("command") == "graphify check-update ." for h in hooks["stop"])
+
+
+def test_cursor_install_installs_hooks_when_rule_already_exists(tmp_path):
+    """cursor install recovers missing hooks when the rule already exists."""
+    from graphify.__main__ import _cursor_install
+    rule = tmp_path / ".cursor" / "rules" / "graphify.mdc"
+    rule.parent.mkdir(parents=True)
+    rule.write_text("existing", encoding="utf-8")
+    _cursor_install(tmp_path)
+    assert (tmp_path / ".cursor" / "hooks.json").exists()
+
+
+def test_cursor_install_does_not_install_project_skill(tmp_path):
+    """cursor setup must not install .cursor/skills; use graphify skill cursor for skills."""
+    from graphify.__main__ import _cursor_install
+    _cursor_install(tmp_path)
+    assert not (tmp_path / ".cursor" / "skills" / "graphify" / "SKILL.md").exists()
+
+
 def test_cursor_uninstall_removes_rule(tmp_path):
     """cursor uninstall removes the rule file."""
     from graphify.__main__ import _cursor_install, _cursor_uninstall
@@ -581,6 +617,16 @@ def test_cursor_uninstall_removes_rule(tmp_path):
     _cursor_uninstall(tmp_path)
     rule = tmp_path / ".cursor" / "rules" / "graphify.mdc"
     assert not rule.exists()
+
+
+def test_cursor_uninstall_removes_hooks(tmp_path):
+    """cursor uninstall removes graphify hook entries."""
+    from graphify.__main__ import _cursor_install, _cursor_uninstall
+    _cursor_install(tmp_path)
+    _cursor_uninstall(tmp_path)
+    hooks_path = tmp_path / ".cursor" / "hooks.json"
+    settings = json.loads(hooks_path.read_text())
+    assert "graphify" not in str(settings)
 
 
 def test_cursor_uninstall_noop_if_not_installed(tmp_path):

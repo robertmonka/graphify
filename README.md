@@ -72,6 +72,7 @@ Install or refresh the user-level assistant skill:
 | Claude Code (Linux/Mac) | `graphify skill claude` |
 | Claude Code (Windows) | `graphify skill windows` |
 | Codex | `graphify skill codex` |
+| Cursor | `graphify skill cursor` |
 | OpenCode | `graphify skill opencode` |
 | GitHub Copilot CLI | `graphify skill copilot` |
 | VS Code Copilot Chat | `graphify skill vscode` |
@@ -280,18 +281,10 @@ The MCP server gives your assistant structured access: `query_graph`, `get_node`
 /graphify ./raw --watch            # auto-sync as files change
 /graphify ./raw --mcp              # start MCP stdio server
 
-/graphify add https://arxiv.org/abs/1706.03762
-/graphify add <video-url>
-/graphify add https://... --author "Name" --contributor "Name"
-
-/graphify query "what connects attention to the optimizer?"
-/graphify query "..." --dfs --budget 1500
-/graphify path "DigestAuth" "Response"
-/graphify explain "SwinTransformer"
-
 # user-level assistant skills
 graphify skill claude                  # ~/.claude/skills/graphify/SKILL.md
 graphify skill codex                   # ~/.agents/skills/graphify/SKILL.md
+graphify skill cursor                  # ~/.cursor/skills/graphify/SKILL.md
 graphify skill opencode                # ~/.config/opencode/skills/graphify/SKILL.md
 graphify skill vscode                  # ~/.copilot/skills/graphify/SKILL.md
 graphify skill remove codex
@@ -300,7 +293,7 @@ graphify skill remove codex
 graphify setup claude                  # CLAUDE.md + UserPromptSubmit reminder + PreToolUse guard
 graphify setup codex                   # AGENTS.md + .codex/config.toml
 graphify setup opencode                # AGENTS.md + tool.execute.before plugin
-graphify setup cursor                  # .cursor/rules/graphify.mdc
+graphify setup cursor                  # .cursor/rules/graphify.mdc + .cursor/hooks.json
 graphify setup gemini                  # GEMINI.md + BeforeTool hook
 graphify setup vscode                  # .github/copilot-instructions.md + VS Code skill
 graphify setup remove codex
