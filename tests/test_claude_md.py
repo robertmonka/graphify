@@ -179,13 +179,44 @@ def test_install_preserves_unrelated_settings_hooks(tmp_path):
     assert any("graphify-guard.py" in str(h) for h in pre_tool)
 
 
+def test_install_removes_legacy_claude_hook_script(tmp_path):
+    """Installing graphify removes old generated Claude hook scripts."""
+    hooks_dir = tmp_path / ".claude" / "hooks"
+    hooks_dir.mkdir(parents=True)
+    legacy_hook = hooks_dir / "graphify-hook.cjs"
+    legacy_hook.write_text("console.log('legacy graphify hook')")
+    settings_path = tmp_path / ".claude" / "settings.json"
+    settings_path.write_text(json.dumps({
+        "hooks": {
+            "UserPromptSubmit": [
+                {"hooks": [{"type": "command", "command": f"node {legacy_hook} user-prompt"}]},
+            ],
+            "PreToolUse": [
+                {"matcher": "Bash", "hooks": [{"type": "command", "command": "echo keep"}]},
+                {"matcher": "Bash", "hooks": [{"type": "command", "command": f"node {legacy_hook} pre-tool"}]},
+            ],
+        }
+    }))
+
+    claude_install(tmp_path)
+
+    settings = json.loads(settings_path.read_text())
+    assert not legacy_hook.exists()
+    assert "graphify-hook.cjs" not in str(settings)
+    assert "echo keep" in str(settings)
+    assert (hooks_dir / "graphify-guard.py").exists()
+
+
 def test_uninstall_removes_settings_hook(tmp_path):
     """claude_uninstall removes graphify hooks and guard script."""
     claude_install(tmp_path)
+    legacy_hook = tmp_path / ".claude" / "hooks" / "graphify-hook.cjs"
+    legacy_hook.write_text("console.log('legacy graphify hook')")
     claude_uninstall(tmp_path)
     settings_path = tmp_path / ".claude" / "settings.json"
     guard_path = tmp_path / ".claude" / "hooks" / "graphify-guard.py"
     assert not guard_path.exists()
+    assert not legacy_hook.exists()
     if settings_path.exists():
         settings = json.loads(settings_path.read_text())
         hooks = settings.get("hooks", {})

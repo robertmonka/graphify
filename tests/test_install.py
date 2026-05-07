@@ -1,5 +1,6 @@
 """Tests for graphify install --platform routing."""
 from contextlib import contextmanager
+import json
 import os
 from pathlib import Path
 import sys
@@ -350,6 +351,58 @@ def test_codex_agents_install_writes_agents_md(tmp_path):
     assert agents_md.exists()
     assert "graphify" in agents_md.read_text()
     assert "GRAPH_REPORT.md" in agents_md.read_text()
+
+
+def test_codex_agents_install_removes_legacy_prompt_hook(tmp_path):
+    hooks_path = tmp_path / ".codex" / "hooks.json"
+    hooks_path.parent.mkdir(parents=True)
+    hooks_path.write_text(json.dumps({
+        "hooks": {
+            "UserPromptSubmit": [
+                {"hooks": [{"type": "command", "command": "echo graphify legacy prompt"}]},
+                {"hooks": [{"type": "command", "command": "echo keep prompt"}]},
+            ],
+            "PreToolUse": [
+                {"matcher": "Bash", "hooks": [{"type": "command", "command": "graphify hook-check"}]},
+                {"matcher": "Bash", "hooks": [{"type": "command", "command": "echo keep tool"}]},
+            ],
+        }
+    }))
+
+    _agents_install(tmp_path, "codex")
+
+    settings = json.loads(hooks_path.read_text())
+    hooks = settings["hooks"]
+    assert "legacy prompt" not in str(settings)
+    assert "keep prompt" in str(hooks.get("UserPromptSubmit", []))
+    assert "keep tool" in str(hooks.get("PreToolUse", []))
+    graphify_pre_tool = [h for h in hooks["PreToolUse"] if "hook-check" in str(h)]
+    assert len(graphify_pre_tool) == 1
+
+
+def test_codex_uninstall_removes_all_graphify_hooks(tmp_path):
+    from graphify.__main__ import _uninstall_codex_hook
+    hooks_path = tmp_path / ".codex" / "hooks.json"
+    hooks_path.parent.mkdir(parents=True)
+    hooks_path.write_text(json.dumps({
+        "hooks": {
+            "UserPromptSubmit": [
+                {"hooks": [{"type": "command", "command": "echo graphify legacy prompt"}]},
+            ],
+            "PreToolUse": [
+                {"matcher": "Bash", "hooks": [{"type": "command", "command": "graphify hook-check"}]},
+            ],
+            "PostToolUse": [
+                {"matcher": "Bash", "hooks": [{"type": "command", "command": "echo keep"}]},
+            ],
+        }
+    }))
+
+    _uninstall_codex_hook(tmp_path)
+
+    settings = json.loads(hooks_path.read_text())
+    assert "graphify" not in str(settings)
+    assert "keep" in str(settings)
 
 
 def test_opencode_agents_install_writes_agents_md(tmp_path):

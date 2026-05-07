@@ -1091,15 +1091,37 @@ def _install_codex_hook(project_dir: Path) -> None:
         }
     }
 
-    pre_tool = existing.setdefault("hooks", {}).setdefault("PreToolUse", [])
-    existing["hooks"]["PreToolUse"] = [h for h in pre_tool if "graphify" not in str(h)]
-    existing["hooks"]["PreToolUse"].extend(hook_entry["hooks"]["PreToolUse"])
+    _remove_graphify_hook_entries(existing)
+    hooks = existing.setdefault("hooks", {})
+    hooks.setdefault("PreToolUse", []).extend(hook_entry["hooks"]["PreToolUse"])
     hooks_path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
     print(f"  .codex/hooks.json  ->  PreToolUse hook registered ({graphify_exe} hook-check)")
 
 
+def _remove_graphify_hook_entries(settings: dict) -> None:
+    """Remove graphify hook entries while preserving unrelated hooks."""
+    hooks = settings.get("hooks")
+    if not isinstance(hooks, dict):
+        settings["hooks"] = {}
+        return
+
+    for event, event_hooks in list(hooks.items()):
+        if not isinstance(event_hooks, list):
+            if "graphify" in str(event_hooks):
+                hooks.pop(event, None)
+            continue
+        filtered = [h for h in event_hooks if "graphify" not in str(h)]
+        if filtered:
+            hooks[event] = filtered
+        else:
+            hooks.pop(event, None)
+
+    if not hooks:
+        settings.pop("hooks", None)
+
+
 def _uninstall_codex_hook(project_dir: Path) -> None:
-    """Remove graphify PreToolUse hook from .codex/hooks.json."""
+    """Remove graphify hooks from .codex/hooks.json."""
     hooks_path = project_dir / ".codex" / "hooks.json"
     if not hooks_path.exists():
         return
@@ -1107,11 +1129,9 @@ def _uninstall_codex_hook(project_dir: Path) -> None:
         existing = json.loads(hooks_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return
-    pre_tool = existing.get("hooks", {}).get("PreToolUse", [])
-    filtered = [h for h in pre_tool if "graphify" not in str(h)]
-    existing["hooks"]["PreToolUse"] = filtered
+    _remove_graphify_hook_entries(existing)
     hooks_path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
-    print(f"  .codex/hooks.json  ->  PreToolUse hook removed")
+    print(f"  .codex/hooks.json  ->  graphify hooks removed")
 
 
 def _agents_install(project_dir: Path, platform: str) -> None:
@@ -1204,24 +1224,18 @@ def claude_install(project_dir: Path | None = None) -> None:
 
 def _remove_graphify_claude_hooks(settings: dict) -> None:
     """Remove graphify Claude hooks while preserving unrelated hooks."""
-    hooks = settings.get("hooks")
-    if not isinstance(hooks, dict):
-        settings["hooks"] = {}
-        return
+    _remove_graphify_hook_entries(settings)
 
-    for event in ("UserPromptSubmit", "PreToolUse"):
-        event_hooks = hooks.get(event)
-        if not isinstance(event_hooks, list):
-            hooks.pop(event, None)
-            continue
-        filtered = [h for h in event_hooks if "graphify" not in str(h)]
-        if filtered:
-            hooks[event] = filtered
-        else:
-            hooks.pop(event, None)
 
-    if not hooks:
-        settings.pop("hooks", None)
+def _remove_graphify_claude_hook_scripts(claude_dir: Path) -> list[Path]:
+    """Remove generated graphify Claude hook scripts."""
+    removed = []
+    for name in ("graphify-guard.py", "graphify-hook.cjs"):
+        hook_path = claude_dir / "hooks" / name
+        if hook_path.exists():
+            hook_path.unlink()
+            removed.append(hook_path)
+    return removed
 
 
 def _load_json_object(path: Path) -> dict:
@@ -1246,6 +1260,7 @@ def _install_claude_hook(project_dir: Path) -> None:
     settings_path = claude_dir / "settings.json"
     hooks_dir = claude_dir / "hooks"
     hooks_dir.mkdir(parents=True, exist_ok=True)
+    _remove_graphify_claude_hook_scripts(claude_dir)
 
     guard_path = hooks_dir / "graphify-guard.py"
     guard_path.write_text(_GRAPHIFY_GUARD_SCRIPT, encoding="utf-8")
@@ -1280,10 +1295,8 @@ def _uninstall_claude_hook(project_dir: Path) -> None:
             settings_path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
             print("  .claude/settings.json  ->  graphify hooks removed")
 
-    guard_path = claude_dir / "hooks" / "graphify-guard.py"
-    if guard_path.exists():
-        guard_path.unlink()
-        print("  .claude/hooks/graphify-guard.py  ->  removed")
+    for hook_path in _remove_graphify_claude_hook_scripts(claude_dir):
+        print(f"  {hook_path.relative_to(claude_dir.parent)}  ->  removed")
 
 def claude_uninstall(project_dir: Path | None = None) -> None:
     """Remove the graphify section from the local CLAUDE.md."""
@@ -1377,7 +1390,7 @@ def main() -> None:
     # Skip during install/uninstall (hook writes trigger a fresh check anyway).
     # Deduplicate paths so platforms sharing the same install dir don't warn twice.
     if not any(arg in ("install", "uninstall") for arg in sys.argv) and (
-        len(sys.argv) < 2 or sys.argv[1] not in ("skill", "setup")
+        len(sys.argv) < 2 or sys.argv[1] not in ("skill", "setup", "hook-check")
     ):
         for skill_dst in {_platform_skill_destination(platform_name) for platform_name in _PLATFORM_CONFIG}:
             _check_skill_version(skill_dst)
