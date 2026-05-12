@@ -97,35 +97,59 @@ def test_install_unknown_platform_exits(tmp_path):
         _install(tmp_path, "unknown")
 
 
-def test_codex_skill_contains_spawn_agent():
-    """Codex skill file must reference spawn_agent."""
+def test_install_platforms_copy_shared_skill_source(tmp_path):
+    """All platform installers copy the shared skill source."""
     import graphify
-    skill = (Path(graphify.__file__).parent / "skill-codex.md").read_text()
-    assert "spawn_agent" in skill
+    shared = (Path(graphify.__file__).parent / "skill.md").read_text()
+    for platform, paths in PLATFORMS.items():
+        root = tmp_path / platform
+        root.mkdir()
+        _install(root, platform)
+        installed = root / paths[0]
+        assert installed.read_text() == shared
 
 
-def test_opencode_skill_contains_mention():
-    """OpenCode skill file must reference @mention."""
+def test_shared_skill_documents_platform_adapter_table():
+    """Platform differences live in one shared skill as an adapter table."""
     import graphify
-    skill = (Path(graphify.__file__).parent / "skill-opencode.md").read_text()
-    assert "@mention" in skill
-
-
-def test_claw_skill_is_sequential():
-    """OpenClaw skill file must describe sequential extraction."""
-    import graphify
-    skill = (Path(graphify.__file__).parent / "skill-claw.md").read_text()
-    assert "sequential" in skill.lower()
-    assert "spawn_agent" not in skill
-    assert "@mention" not in skill
+    skill = (Path(graphify.__file__).parent / "skill.md").read_text()
+    assert "## Platform Adapter Table" in skill
+    assert "| Agent | Instruction file | Runtime hook | Semantic extraction adapter |" in skill
+    for name in ("Claude Code", "Codex", "OpenCode", "Cursor", "Gemini"):
+        assert name in skill
 
 
 def test_all_skill_files_exist_in_package():
-    """All installable platform skill files must be present in the installed package."""
+    """Legacy platform skill files remain packaged for compatibility/reference."""
     import graphify
     pkg = Path(graphify.__file__).parent
     for name in ("skill.md", "skill-codex.md", "skill-opencode.md", "skill-claw.md", "skill-windows.md", "skill-droid.md", "skill-trae.md"):
         assert (pkg / name).exists(), f"Missing: {name}"
+
+
+def test_project_instruction_templates_share_core():
+    """Generated project instruction files use the same graphify rule core."""
+    from graphify.__main__ import (
+        _AGENTS_MD_SECTION,
+        _ANTIGRAVITY_RULES,
+        _CLAUDE_MD_SECTION,
+        _CURSOR_RULE,
+        _GEMINI_MD_SECTION,
+        _GRAPHIFY_INSTRUCTION_BODY,
+        _KIRO_STEERING,
+        _VSCODE_INSTRUCTIONS_SECTION,
+    )
+
+    for section in (
+        _CLAUDE_MD_SECTION,
+        _AGENTS_MD_SECTION,
+        _GEMINI_MD_SECTION,
+        _VSCODE_INSTRUCTIONS_SECTION,
+        _ANTIGRAVITY_RULES,
+        _KIRO_STEERING,
+        _CURSOR_RULE,
+    ):
+        assert _GRAPHIFY_INSTRUCTION_BODY in section
 
 
 def test_claude_install_registers_claude_md(tmp_path):

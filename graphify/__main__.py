@@ -79,79 +79,82 @@ _SKILL_REGISTRATION = (
 )
 
 
+_SHARED_SKILL_FILE = "skill.md"
+
+
 _PLATFORM_CONFIG: dict[str, dict] = {
     "claude": {
-        "skill_file": "skill.md",
+        "skill_file": _SHARED_SKILL_FILE,
         "skill_dst": Path(".claude") / "skills" / "graphify" / "SKILL.md",
         "claude_md": True,
     },
     "codex": {
-        "skill_file": "skill-codex.md",
+        "skill_file": _SHARED_SKILL_FILE,
         "skill_dst": Path(".agents") / "skills" / "graphify" / "SKILL.md",
         "claude_md": False,
     },
     "opencode": {
-        "skill_file": "skill-opencode.md",
+        "skill_file": _SHARED_SKILL_FILE,
         "skill_dst": Path(".config") / "opencode" / "skills" / "graphify" / "SKILL.md",
         "claude_md": False,
     },
     "aider": {
-        "skill_file": "skill-aider.md",
+        "skill_file": _SHARED_SKILL_FILE,
         "skill_dst": Path(".aider") / "graphify" / "SKILL.md",
         "claude_md": False,
     },
     "copilot": {
-        "skill_file": "skill-copilot.md",
+        "skill_file": _SHARED_SKILL_FILE,
         "skill_dst": Path(".copilot") / "skills" / "graphify" / "SKILL.md",
         "claude_md": False,
     },
     "claw": {
-        "skill_file": "skill-claw.md",
+        "skill_file": _SHARED_SKILL_FILE,
         "skill_dst": Path(".openclaw") / "skills" / "graphify" / "SKILL.md",
         "claude_md": False,
     },
     "droid": {
-        "skill_file": "skill-droid.md",
+        "skill_file": _SHARED_SKILL_FILE,
         "skill_dst": Path(".factory") / "skills" / "graphify" / "SKILL.md",
         "claude_md": False,
     },
     "trae": {
-        "skill_file": "skill-trae.md",
+        "skill_file": _SHARED_SKILL_FILE,
         "skill_dst": Path(".trae") / "skills" / "graphify" / "SKILL.md",
         "claude_md": False,
     },
     "trae-cn": {
-        "skill_file": "skill-trae.md",
+        "skill_file": _SHARED_SKILL_FILE,
         "skill_dst": Path(".trae-cn") / "skills" / "graphify" / "SKILL.md",
         "claude_md": False,
     },
     "hermes": {
-        "skill_file": "skill-claw.md",
+        "skill_file": _SHARED_SKILL_FILE,
         "skill_dst": Path(".hermes") / "skills" / "graphify" / "SKILL.md",
         "claude_md": False,
     },
     "kiro": {
-        "skill_file": "skill-kiro.md",
+        "skill_file": _SHARED_SKILL_FILE,
         "skill_dst": Path(".kiro") / "skills" / "graphify" / "SKILL.md",
         "claude_md": False,
     },
     "pi": {
-        "skill_file": "skill-pi.md",
+        "skill_file": _SHARED_SKILL_FILE,
         "skill_dst": Path(".pi") / "agent" / "skills" / "graphify" / "SKILL.md",
         "claude_md": False,
     },
     "antigravity": {
-        "skill_file": "skill.md",
+        "skill_file": _SHARED_SKILL_FILE,
         "skill_dst": Path(".agents") / "skills" / "graphify" / "SKILL.md",
         "claude_md": False,
     },
     "windows": {
-        "skill_file": "skill-windows.md",
+        "skill_file": _SHARED_SKILL_FILE,
         "skill_dst": Path(".claude") / "skills" / "graphify" / "SKILL.md",
         "claude_md": True,
     },
     "kimi": {
-        "skill_file": "skill.md",
+        "skill_file": _SHARED_SKILL_FILE,
         "skill_dst": Path(".kimi") / "skills" / "graphify" / "SKILL.md",
         "claude_md": False,
     },
@@ -233,49 +236,37 @@ def _print_install_usage() -> None:
     print(f"Platforms: {platforms}")
 
 
-_CLAUDE_MD_SECTION = """\
-## graphify
-
-This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+_GRAPHIFY_INSTRUCTION_BODY = """\
+This project has a graphify knowledge graph at graphify-out/.
 
 Rules:
-- ALWAYS read graphify-out/GRAPH_REPORT.md before reading any source files, running grep/glob searches, or answering codebase questions. The graph is your primary map of the codebase.
-- IF graphify-out/wiki/index.md EXISTS, navigate it instead of reading raw files
-- For cross-module "how does X relate to Y" questions, prefer `graphify query "<question>"`, `graphify path "<A>" "<B>"`, or `graphify explain "<concept>"` over grep — these traverse the graph's EXTRACTED + INFERRED edges instead of scanning files
-- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure.
+- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files.
+- For cross-module questions, prefer `graphify query "<question>"`, `graphify path "<A>" "<B>"`, or `graphify explain "<concept>"` over raw file search.
+- After modifying code files in this session, run `graphify update .` to keep the graph current (AST-only, no API cost).
 """
+
+
+def _graphify_instruction_section(extra: str = "") -> str:
+    section = f"## graphify\n\n{_GRAPHIFY_INSTRUCTION_BODY}"
+    if extra:
+        section += f"\n{extra.strip()}\n"
+    return section
+
+
+_CLAUDE_MD_SECTION = _graphify_instruction_section()
 
 _CLAUDE_MD_MARKER = "## graphify"
 
 # AGENTS.md section for Codex, OpenCode, and OpenClaw.
 # All three platforms read AGENTS.md in the project root for persistent instructions.
-_AGENTS_MD_SECTION = """\
-## graphify
-
-This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
-
-When the user types `/graphify`, invoke the `skill` tool with `skill: "graphify"` before doing anything else.
-
-Rules:
-- ALWAYS read graphify-out/GRAPH_REPORT.md before reading any source files, running grep/glob searches, or answering codebase questions. The graph is your primary map of the codebase.
-- IF graphify-out/wiki/index.md EXISTS, navigate it instead of reading raw files
-- For cross-module "how does X relate to Y" questions, prefer `graphify query "<question>"`, `graphify path "<A>" "<B>"`, or `graphify explain "<concept>"` over grep — these traverse the graph's EXTRACTED + INFERRED edges instead of scanning files
-- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
-"""
+_AGENTS_MD_SECTION = _graphify_instruction_section(
+    'When the user types `/graphify`, invoke the `skill` tool with `skill: "graphify"` before doing anything else.'
+)
 
 _AGENTS_MD_MARKER = "## graphify"
 
-_GEMINI_MD_SECTION = """\
-## graphify
-
-This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
-
-Rules:
-- ALWAYS read graphify-out/GRAPH_REPORT.md before reading any source files, running grep/glob searches, or answering codebase questions. The graph is your primary map of the codebase.
-- IF graphify-out/wiki/index.md EXISTS, navigate it instead of reading raw files
-- For cross-module "how does X relate to Y" questions, prefer `graphify query "<question>"`, `graphify path "<A>" "<B>"`, or `graphify explain "<concept>"` over grep — these traverse the graph's EXTRACTED + INFERRED edges instead of scanning files
-- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
-"""
+_GEMINI_MD_SECTION = _graphify_instruction_section()
 
 _GEMINI_MD_MARKER = "## graphify"
 
@@ -302,7 +293,7 @@ def gemini_install(project_dir: Path | None = None) -> None:
     """Copy skill file to ~/.gemini/skills/graphify/, write GEMINI.md section, and install BeforeTool hook."""
     # Copy skill file to ~/.gemini/skills/graphify/SKILL.md
     # On Windows, Gemini CLI prioritises ~/.agents/skills/ over ~/.gemini/skills/
-    skill_src = Path(__file__).parent / "skill.md"
+    skill_src = Path(__file__).parent / _SHARED_SKILL_FILE
     if platform.system() == "Windows":
         skill_dst = Path.home() / ".agents" / "skills" / "graphify" / "SKILL.md"
     else:
@@ -400,28 +391,14 @@ def gemini_uninstall(project_dir: Path | None = None) -> None:
 
 
 _VSCODE_INSTRUCTIONS_MARKER = "## graphify"
-_VSCODE_INSTRUCTIONS_SECTION = """\
-## graphify
-
-For any question about this repo's architecture, structure, components, or how to add/modify/find
-code, your **first tool call must be** to read `graphify-out/GRAPH_REPORT.md` (if it exists).
-
-Triggers: "how do I…", "where is…", "what does … do", "add/modify a <component>",
-"explain the architecture", or anything that depends on how files or classes relate.
-
-After reading the report (and `graphify-out/wiki/index.md` for deep questions), answer from the
-graph. Only read source files when (a) modifying/debugging specific code, (b) the graph lacks
-the needed detail, or (c) the graph is missing or stale.
-
-Type `/graphify` in Copilot Chat to build or update the graph.
-"""
+_VSCODE_INSTRUCTIONS_SECTION = _graphify_instruction_section(
+    "Type `/graphify` in Copilot Chat to build or update the graph."
+)
 
 
 def vscode_install(project_dir: Path | None = None) -> None:
     """Install graphify skill for VS Code Copilot Chat + write .github/copilot-instructions.md."""
-    skill_src = Path(__file__).parent / "skill-vscode.md"
-    if not skill_src.exists():
-        skill_src = Path(__file__).parent / "skill-copilot.md"
+    skill_src = Path(__file__).parent / _SHARED_SKILL_FILE
     skill_dst = Path.home() / ".copilot" / "skills" / "graphify" / "SKILL.md"
     skill_dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy(skill_src, skill_dst)
@@ -479,7 +456,7 @@ def vscode_uninstall(project_dir: Path | None = None) -> None:
 _ANTIGRAVITY_RULES_PATH = Path(".agents") / "rules" / "graphify.md"
 _ANTIGRAVITY_WORKFLOW_PATH = Path(".agents") / "workflows" / "graphify.md"
 
-_ANTIGRAVITY_RULES = """\
+_ANTIGRAVITY_RULES = f"""\
 ---
 trigger: always_on
 description: Always consult the graphify knowledge graph at graphify-out/ before answering codebase or architecture questions.
@@ -487,14 +464,11 @@ description: Always consult the graphify knowledge graph at graphify-out/ before
 
 ## graphify
 
-This project has a graphify knowledge graph at graphify-out/.
+{_GRAPHIFY_INSTRUCTION_BODY}
 
-Rules:
-- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
-- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
+Additional navigation:
 - If the graphify MCP server is active, utilize tools like `query_graph`, `get_node`, and `shortest_path` for precise architecture navigation instead of falling back to `grep`
 - If the MCP server is not active, the CLI equivalents are `graphify query "<question>"`, `graphify path "<A>" "<B>"`, and `graphify explain "<concept>"` - prefer these over grep for cross-module questions
-- After modifying code files in this session, run `graphify update .` to keep the graph current (AST-only, no API cost)
 """
 
 _ANTIGRAVITY_WORKFLOW = """\
@@ -511,15 +485,12 @@ If no path argument is given, use `.` (current directory).
 """
 
 
-_KIRO_STEERING = """\
+_KIRO_STEERING = f"""\
 ---
 inclusion: always
 ---
 
-graphify: A knowledge graph of this project lives in `graphify-out/`. \
-If `graphify-out/GRAPH_REPORT.md` exists, read it before answering architecture questions, \
-tracing dependencies, or searching files — it contains god nodes, community structure, \
-and surprising connections the graph found. Navigate by graph structure instead of grepping raw files.
+{_GRAPHIFY_INSTRUCTION_BODY}
 """
 
 _KIRO_STEERING_MARKER = "graphify: A knowledge graph of this project"
@@ -530,7 +501,7 @@ def _kiro_install(project_dir: Path) -> None:
     project_dir = project_dir or Path(".")
 
     # Skill file → .kiro/skills/graphify/SKILL.md
-    skill_src = Path(__file__).parent / "skill-kiro.md"
+    skill_src = Path(__file__).parent / _SHARED_SKILL_FILE
     skill_dst = project_dir / ".kiro" / "skills" / "graphify" / "SKILL.md"
     skill_dst.parent.mkdir(parents=True, exist_ok=True)
     skill_dst.write_text(skill_src.read_text(encoding="utf-8"), encoding="utf-8")
@@ -658,17 +629,13 @@ def _antigravity_uninstall(project_dir: Path) -> None:
 
 
 _CURSOR_RULE_PATH = Path(".cursor") / "rules" / "graphify.mdc"
-_CURSOR_RULE = """\
+_CURSOR_RULE = f"""\
 ---
 description: graphify knowledge graph context
 alwaysApply: true
 ---
 
-This project has a graphify knowledge graph at graphify-out/.
-
-- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
-- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
-- After modifying code files in this session, run `graphify update .` to keep the graph current (AST-only, no API cost)
+{_GRAPHIFY_INSTRUCTION_BODY}
 """
 
 
