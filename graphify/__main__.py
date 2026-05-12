@@ -931,16 +931,11 @@ def _uninstall_opencode_plugin(project_dir: Path) -> None:
 
 _CODEX_HOOK = {
     "hooks": {
-        "PreToolUse": [
+        "SessionStart": [
             {
-                "matcher": "Bash",
                 "hooks": [
                     {
                         "type": "command",
-                        # Use the graphify CLI itself so the hook is shell-agnostic:
-                        # no [ -f ] bash syntax, no python3 vs python Conda issue,
-                        # no JSON escaping inside PowerShell strings. Works on
-                        # Windows (PowerShell/cmd.exe), macOS, and Linux.
                         "command": "graphify hook-check",
                     }
                 ],
@@ -950,28 +945,26 @@ _CODEX_HOOK = {
 }
 
 
-def _resolve_graphify_exe() -> str:
-    """Return the absolute path to the graphify executable.
+def _filter_graphify_hooks(entries: list) -> list:
+    return [entry for entry in entries if "graphify" not in str(entry)]
 
-    Falls back to bare 'graphify' if resolution fails. Using an absolute path
-    ensures the hook works in environments where the venv Scripts/ directory is
-    not on PATH (e.g. VS Code Codex extension on Windows).
-    """
-    import shutil
-    found = shutil.which("graphify")
-    if found:
-        return found
-    # Derive from sys.executable: same Scripts/ (Windows) or bin/ (Unix) dir
-    scripts_dir = Path(sys.executable).parent
-    for name in ("graphify.exe", "graphify"):
-        candidate = scripts_dir / name
-        if candidate.exists():
-            return str(candidate)
-    return "graphify"
+
+def _read_hook_event_name() -> str | None:
+    if sys.stdin.isatty():
+        return None
+    raw = sys.stdin.read()
+    if not raw.strip():
+        return None
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    event_name = payload.get("hook_event_name")
+    return event_name if isinstance(event_name, str) else None
 
 
 def _install_codex_hook(project_dir: Path) -> None:
-    """Add graphify PreToolUse hook to .codex/hooks.json."""
+    """Add graphify Codex session-context hook to .codex/hooks.json."""
     hooks_path = project_dir / ".codex" / "hooks.json"
     hooks_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -983,27 +976,21 @@ def _install_codex_hook(project_dir: Path) -> None:
     else:
         existing = {}
 
-    graphify_exe = _resolve_graphify_exe()
-    hook_entry = {
-        "hooks": {
-            "PreToolUse": [
-                {
-                    "matcher": "Bash",
-                    "hooks": [{"type": "command", "command": f"{graphify_exe} hook-check"}],
-                }
-            ]
-        }
-    }
-
-    pre_tool = existing.setdefault("hooks", {}).setdefault("PreToolUse", [])
-    existing["hooks"]["PreToolUse"] = [h for h in pre_tool if "graphify" not in str(h)]
-    existing["hooks"]["PreToolUse"].extend(hook_entry["hooks"]["PreToolUse"])
+    hooks = existing.setdefault("hooks", {})
+    for event_name in ("PreToolUse", "UserPromptSubmit", "SessionStart"):
+        if event_name in hooks:
+            filtered = _filter_graphify_hooks(hooks.get(event_name, []))
+            if filtered:
+                hooks[event_name] = filtered
+            else:
+                hooks.pop(event_name, None)
+    hooks.setdefault("SessionStart", []).extend(_CODEX_HOOK["hooks"]["SessionStart"])
     hooks_path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
-    print(f"  .codex/hooks.json  ->  PreToolUse hook registered ({graphify_exe} hook-check)")
+    print("  .codex/hooks.json  ->  SessionStart hook registered (graphify hook-check)")
 
 
 def _uninstall_codex_hook(project_dir: Path) -> None:
-    """Remove graphify PreToolUse hook from .codex/hooks.json."""
+    """Remove graphify hooks from .codex/hooks.json."""
     hooks_path = project_dir / ".codex" / "hooks.json"
     if not hooks_path.exists():
         return
@@ -1011,11 +998,16 @@ def _uninstall_codex_hook(project_dir: Path) -> None:
         existing = json.loads(hooks_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return
-    pre_tool = existing.get("hooks", {}).get("PreToolUse", [])
-    filtered = [h for h in pre_tool if "graphify" not in str(h)]
-    existing["hooks"]["PreToolUse"] = filtered
+    hooks = existing.get("hooks", {})
+    for event_name in ("PreToolUse", "UserPromptSubmit", "SessionStart"):
+        if event_name in hooks:
+            filtered = _filter_graphify_hooks(hooks.get(event_name, []))
+            if filtered:
+                hooks[event_name] = filtered
+            else:
+                hooks.pop(event_name, None)
     hooks_path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
-    print(f"  .codex/hooks.json  ->  PreToolUse hook removed")
+    print(f"  .codex/hooks.json  ->  graphify hooks removed")
 
 
 def _agents_install(project_dir: Path, platform: str) -> None:
@@ -1270,7 +1262,7 @@ def _clone_repo(url: str, branch: str | None = None, out_dir: Path | None = None
 def main() -> None:
     # Check all known skill install locations for a stale version stamp.
     # Skip during install/uninstall (hook writes trigger a fresh check anyway).
-    # Skip during hook-check — it runs on every editor tool use and must be silent.
+    # Skip during hook-check — Codex hook stdout has a strict JSON contract.
     # Deduplicate paths so platforms sharing the same install dir don't warn twice.
     _silent_cmds = {"skill", "setup", "install", "uninstall", "hook-check"}
     if not any(arg in _silent_cmds for arg in sys.argv):
@@ -1825,16 +1817,29 @@ def main() -> None:
             sys.exit(1)
 
     elif cmd == "hook-check":
-        # Codex Desktop rejects hookSpecificOutput.additionalContext on PreToolUse.
-        # Keep this as a cross-platform no-op so installed hooks never break Bash
-        # tool calls. Graph guidance reaches the agent via AGENTS.md / skill instead.
+        # Codex renders UserPromptSubmit additionalContext on every prompt.
+        # SessionStart keeps the graph reminder to one hook run per session.
+        if _read_hook_event_name() == "SessionStart":
+            graph_dir = Path(".").resolve() / "graphify-out"
+            if graph_dir.exists():
+                message = (
+                    "graphify: Knowledge graph exists. Read graphify-out/GRAPH_REPORT.md "
+                    "before raw file search for architecture or codebase questions."
+                )
+                print(json.dumps({
+                    "suppressOutput": True,
+                    "hookSpecificOutput": {
+                        "hookEventName": "SessionStart",
+                        "additionalContext": message,
+                    }
+                }, ensure_ascii=False))
         sys.exit(0)
     elif cmd == "check-update":
         if len(sys.argv) < 3:
             print("Usage: graphify check-update <path>", file=sys.stderr)
             sys.exit(1)
         from graphify.watch import check_update
-        check_update(Path(sys.argv[2]).resolve())
+        check_update(Path(sys.argv[2]).resolve(), scan_manifest=True)
         sys.exit(0)
     elif cmd == "tree":
         # Emit a D3 v7 collapsible-tree HTML view of graph.json:

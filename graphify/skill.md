@@ -52,7 +52,7 @@ The graphify workflow is the same for every agent. Only the platform adapter cha
 | Agent | Instruction file | Runtime hook | Semantic extraction adapter |
 |---|---|---|---|
 | Claude Code | `CLAUDE.md` | `PreToolUse` | Agent tool |
-| Codex | `AGENTS.md` | `PreToolUse` | `spawn_agent` / `wait_agent` |
+| Codex | `AGENTS.md` | `SessionStart` | `spawn_agent` / `wait_agent` |
 | OpenCode | `AGENTS.md` | `tool.execute.before` plugin | OpenCode agent mechanism |
 | Cursor | `.cursor/rules/graphify.mdc` | none | built-in agent workflow |
 | Gemini | `GEMINI.md` | `BeforeTool` | direct CLI/model workflow |
@@ -749,7 +749,7 @@ print(f'This run: {input_tok:,} input tokens, {output_tok:,} output tokens')
 print(f'All time: {cost[\"total_input_tokens\"]:,} input, {cost[\"total_output_tokens\"]:,} output ({len(cost[\"runs\"])} runs)')
 "
 rm -f graphify-out/.graphify_detect.json graphify-out/.graphify_extract.json graphify-out/.graphify_ast.json graphify-out/.graphify_semantic.json graphify-out/.graphify_analysis.json graphify-out/.graphify_chunk_*.json
-rm -f graphify-out/.needs_update 2>/dev/null || true
+rm -f graphify-out/needs_update graphify-out/.needs_update 2>/dev/null || true
 ```
 
 Tell the user (omit the obsidian line unless --obsidian was given):

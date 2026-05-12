@@ -204,6 +204,7 @@ def test_shared_skill_documents_platform_adapter_table():
     skill = (Path(graphify.__file__).parent / "skill.md").read_text()
     assert "## Platform Adapter Table" in skill
     assert "| Agent | Instruction file | Runtime hook | Semantic extraction adapter |" in skill
+    assert "| Codex | `AGENTS.md` | `SessionStart` | `spawn_agent` / `wait_agent` |" in skill
     for name in ("Claude Code", "Codex", "OpenCode", "Cursor", "Gemini"):
         assert name in skill
 
@@ -216,6 +217,24 @@ def test_shared_skill_documents_kimi_fast_path():
     assert "Kimi fast path" in skill
     assert 'backend="kimi"' in skill
     assert "graphifyy[kimi]" in skill
+
+
+def test_shared_skill_prohibits_rationale_file_type_nodes():
+    """Semantic extraction should store rationale as node attributes, not rationale nodes."""
+    import graphify
+    skill = (Path(graphify.__file__).parent / "skill.md").read_text()
+    assert "do NOT create a separate rationale node" in skill
+    assert "Valid `file_type` values are ONLY `code|document|paper|image`" in skill
+    assert 'Use `file_type:"rationale"`' not in skill
+    assert "code|document|paper|image|rationale|concept" not in skill
+    assert '"file_type":"code|document|paper|image"' in skill
+
+
+def test_shared_skill_clears_runtime_needs_update_flag():
+    """The shared skill clears the same pending-update flag that hooks read."""
+    import graphify
+    skill = (Path(graphify.__file__).parent / "skill.md").read_text()
+    assert "rm -f graphify-out/needs_update" in skill
 
 
 def test_all_skill_files_exist_in_package():
@@ -289,6 +308,49 @@ def test_codex_agents_install_mentions_hook_trust(tmp_path, capsys):
     assert "Trust" in out
 
 
+def test_codex_agents_install_writes_single_session_hook(tmp_path):
+    """Codex install wires one graphify SessionStart hook with context output."""
+    import json as _json
+
+    _agents_install(tmp_path, "codex")
+
+    hooks = _json.loads((tmp_path / ".codex" / "hooks.json").read_text())["hooks"]
+    session_hooks = hooks.get("SessionStart", [])
+    assert any("graphify" in str(entry) and "hook-check" in str(entry) for entry in session_hooks)
+    assert session_hooks == [{
+        "hooks": [{"type": "command", "command": "graphify hook-check"}],
+    }]
+    assert "PreToolUse" not in hooks or "graphify" not in str(hooks["PreToolUse"])
+    assert "UserPromptSubmit" not in hooks or "graphify" not in str(hooks["UserPromptSubmit"])
+
+
+def test_codex_agents_install_replaces_legacy_graphify_prompt_hook(tmp_path):
+    """Reinstall replaces old graphify UserPromptSubmit check-update entries."""
+    import json as _json
+
+    hooks_path = tmp_path / ".codex" / "hooks.json"
+    hooks_path.parent.mkdir(parents=True)
+    hooks_path.write_text(_json.dumps({
+        "hooks": {
+            "UserPromptSubmit": [
+                {
+                    "hooks": [{"type": "command", "command": "graphify check-update ."}],
+                },
+                {
+                    "hooks": [{"type": "command", "command": "other prompt hook"}],
+                },
+            ]
+        }
+    }))
+
+    _agents_install(tmp_path, "codex")
+
+    hooks = _json.loads(hooks_path.read_text())["hooks"]
+    assert "graphify check-update" not in str(hooks)
+    assert "other prompt hook" in str(hooks)
+    assert "graphify" in str(hooks["SessionStart"])
+
+
 def test_opencode_agents_install_writes_agents_md(tmp_path):
     _agents_install(tmp_path, "opencode")
     assert (tmp_path / "AGENTS.md").exists()
@@ -335,6 +397,19 @@ def test_agents_uninstall_preserves_other_content(tmp_path):
     content = agents_md.read_text()
     assert "Do not break things." in content
     assert "## graphify" not in content
+
+
+def test_codex_agents_uninstall_removes_graphify_session_hook(tmp_path):
+    """Codex uninstall removes the SessionStart graphify hook."""
+    import json as _json
+
+    _agents_install(tmp_path, "codex")
+    _agents_uninstall(tmp_path, platform="codex")
+    from graphify.__main__ import _uninstall_codex_hook
+    _uninstall_codex_hook(tmp_path)
+
+    hooks = _json.loads((tmp_path / ".codex" / "hooks.json").read_text()).get("hooks", {})
+    assert "graphify" not in str(hooks)
 
 
 def test_agents_uninstall_no_op_when_not_installed(tmp_path, capsys):

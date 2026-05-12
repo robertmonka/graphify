@@ -142,3 +142,117 @@ def test_hook_check_no_additionalContext(tmp_path):
     assert result.returncode == 0
     assert result.stdout == ""
     assert result.stderr == ""
+
+
+def test_hook_check_stays_silent_when_update_is_pending(tmp_path):
+    """PreToolUse hook-check must not render repeated Codex warnings."""
+    import sys
+    out = tmp_path / "graphify-out"
+    out.mkdir()
+    (out / "needs_update").write_text("1", encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "graphify", "hook-check"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert result.stdout == ""
+    assert "additionalContext" not in result.stdout
+    assert "hookSpecificOutput" not in result.stdout
+    assert result.stderr == ""
+
+
+def test_hook_check_stays_silent_for_user_prompt_submit(tmp_path):
+    """UserPromptSubmit is too noisy in Codex UI and must stay silent."""
+    import json as _json
+    import sys
+    out = tmp_path / "graphify-out"
+    out.mkdir()
+    (out / "needs_update").write_text("1", encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "graphify", "hook-check"],
+        cwd=tmp_path,
+        input=_json.dumps({"hook_event_name": "UserPromptSubmit"}),
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert result.stdout == ""
+    assert result.stderr == ""
+
+
+def test_hook_check_returns_context_once_for_session_start(tmp_path):
+    """SessionStart hook-check injects graph context once per Codex session."""
+    import json as _json
+    import sys
+    out = tmp_path / "graphify-out"
+    out.mkdir()
+
+    result = subprocess.run(
+        [sys.executable, "-m", "graphify", "hook-check"],
+        cwd=tmp_path,
+        input=_json.dumps({"hook_event_name": "SessionStart"}),
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    payload = _json.loads(result.stdout)
+    assert payload["suppressOutput"] is True
+    hook_output = payload["hookSpecificOutput"]
+    assert hook_output["hookEventName"] == "SessionStart"
+    assert "GRAPH_REPORT.md" in hook_output["additionalContext"]
+    assert "Pending non-code changes" not in hook_output["additionalContext"]
+    assert "systemMessage" not in payload
+    assert result.stderr == ""
+
+
+def test_check_update_cli_prints_pending_update(tmp_path):
+    """The printable reminder belongs to check-update, not PreToolUse hook-check."""
+    import sys
+    out = tmp_path / "graphify-out"
+    out.mkdir()
+    (out / "needs_update").write_text("1", encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "graphify", "check-update", str(tmp_path)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "graphify --update" in result.stdout
+    assert "[graphify]" in result.stdout
+    assert "[graphify check-update]" not in result.stdout
+    assert result.stderr == ""
+
+
+def test_check_update_cli_detects_changed_document_from_manifest(tmp_path):
+    """check-update should detect changed non-code files from manifest state."""
+    import os
+    import sys
+    from graphify.detect import save_manifest
+
+    doc = tmp_path / "notes.md"
+    doc.write_text("# old\n", encoding="utf-8")
+    manifest = tmp_path / "graphify-out" / "manifest.json"
+    save_manifest({"document": [str(doc)]}, manifest_path=str(manifest))
+
+    old_mtime = doc.stat().st_mtime
+    doc.write_text("# new\n", encoding="utf-8")
+    os.utime(doc, (old_mtime + 2, old_mtime + 2))
+
+    result = subprocess.run(
+        [sys.executable, "-m", "graphify", "check-update", str(tmp_path)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "graphify --update" in result.stdout
+    assert result.stderr == ""
