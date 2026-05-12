@@ -170,6 +170,14 @@ def build_from_json(extraction: dict, *, directed: bool = False) -> nx.Graph:
     hyperedges = extraction.get("hyperedges", [])
     if hyperedges:
         G.graph["hyperedges"] = hyperedges
+    # Strip degree-0 code nodes. Bundled/synthetic code symbols with no
+    # connections inflate centrality and clustering noise, while standalone
+    # document/paper/image nodes can be intentional leaf concepts.
+    isolated_code = [
+        n for n in list(G.nodes())
+        if G.degree(n) == 0 and G.nodes[n].get("file_type") == "code"
+    ]
+    G.remove_nodes_from(isolated_code)
     return G
 
 

@@ -595,7 +595,52 @@ def _rebuild_code(
         return False
 
 
-def check_update(watch_path: Path) -> bool:
+def _manifest_has_pending_non_code_changes(watch_path: Path) -> bool:
+    manifest_path = Path(watch_path) / _GRAPHIFY_OUT / "manifest.json"
+    if not manifest_path.exists():
+        return False
+    try:
+        from graphify.detect import detect_incremental
+        result = detect_incremental(watch_path, manifest_path=str(manifest_path))
+    except Exception:
+        return False
+
+    new_files = result.get("new_files", {})
+    pending = [
+        f
+        for ftype, files in new_files.items()
+        if ftype != "code"
+        for f in files
+    ]
+    pending.extend(
+        f
+        for f in result.get("deleted_files", [])
+        if Path(f).suffix.lower() not in _CODE_EXTENSIONS
+    )
+    return bool(pending)
+
+
+def pending_update_message(
+    watch_path: Path,
+    *,
+    scan_manifest: bool = False,
+    prefix: str = "graphify",
+) -> str | None:
+    """Return a semantic-update reminder if non-code graph changes are pending."""
+    watch_path = Path(watch_path)
+    flag = watch_path / _GRAPHIFY_OUT / "needs_update"
+    pending = flag.exists()
+    if not pending and scan_manifest:
+        pending = _manifest_has_pending_non_code_changes(watch_path)
+    if not pending:
+        return None
+    return (
+        f"[{prefix}] Pending non-code changes in {watch_path}.\n"
+        f"[{prefix}] Run `/graphify --update` to apply semantic re-extraction."
+    )
+
+
+def check_update(watch_path: Path, *, scan_manifest: bool = False) -> bool:
     """Check for pending semantic update flag and notify the user if set.
 
     Cron-safe: always returns True so cron jobs do not alarm.
@@ -603,10 +648,9 @@ def check_update(watch_path: Path) -> bool:
     re-extraction via `/graphify --update` — this function only signals
     that the update is needed.
     """
-    flag = Path(watch_path) / _GRAPHIFY_OUT / "needs_update"
-    if flag.exists():
-        print(f"[graphify check-update] Pending non-code changes in {watch_path}.")
-        print("[graphify check-update] Run `/graphify --update` to apply semantic re-extraction.")
+    message = pending_update_message(watch_path, scan_manifest=scan_manifest)
+    if message:
+        print(message)
     return True
 
 

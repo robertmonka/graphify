@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 from graphify.detect import classify_file, count_words, detect, detect_incremental, save_manifest, FileType, _looks_like_paper, _is_ignored, _load_graphifyignore
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -41,6 +42,27 @@ def test_detect_finds_fixtures():
     assert result["total_files"] >= 2
     assert "code" in result["files"]
     assert "document" in result["files"]
+
+
+def test_save_manifest_ast_refresh_preserves_unchanged_semantic_hash(tmp_path):
+    """AST-only refreshes must not mark non-code files as semantically current."""
+    doc = tmp_path / "notes.md"
+    src = tmp_path / "app.py"
+    doc.write_text("# docs\n", encoding="utf-8")
+    src.write_text("x = 1\n", encoding="utf-8")
+    manifest = tmp_path / "graphify-out" / "manifest.json"
+
+    files = {"document": [str(doc)], "code": [str(src)]}
+    save_manifest(files, manifest_path=str(manifest), kind="both")
+    before = json.loads(manifest.read_text(encoding="utf-8"))
+
+    save_manifest(files, manifest_path=str(manifest), kind="ast")
+
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    assert str(doc) in data
+    assert str(src) in data
+    assert data[str(doc)]["semantic_hash"] == before[str(doc)]["semantic_hash"]
+    assert data[str(src)]["semantic_hash"] == before[str(src)]["semantic_hash"]
 
 def test_detect_warns_small_corpus():
     result = detect(FIXTURES)

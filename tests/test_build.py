@@ -33,11 +33,11 @@ def test_ambiguous_edge_preserved():
 
 def test_legacy_node_source_canonicalized():
     """Legacy 'source' key on nodes is renamed to 'source_file' before graph build."""
-    ext = {"nodes": [{"id": "n1", "label": "A", "file_type": "code", "source": "a.py"}],
+    ext = {"nodes": [{"id": "n1", "label": "A", "file_type": "document", "source": "a.md"}],
            "edges": [], "input_tokens": 0, "output_tokens": 0}
     G = build_from_json(ext)
     assert "source_file" in G.nodes["n1"]
-    assert G.nodes["n1"]["source_file"] == "a.py"
+    assert G.nodes["n1"]["source_file"] == "a.md"
     assert "source" not in G.nodes["n1"]
 
 
@@ -56,15 +56,15 @@ def test_source_file_backslash_normalized():
     """Windows backslash paths and POSIX paths for the same file must produce one node."""
     extraction = {
         "nodes": [
-            {"id": "n1", "label": "A", "file_type": "code", "source_file": "src\\middleware\\auth.py"},
-            {"id": "n2", "label": "B", "file_type": "code", "source_file": "src/middleware/auth.py"},
+            {"id": "n1", "label": "A", "file_type": "document", "source_file": "src\\middleware\\auth.md"},
+            {"id": "n2", "label": "B", "file_type": "document", "source_file": "src/middleware/auth.md"},
         ],
         "edges": [],
         "input_tokens": 0, "output_tokens": 0,
     }
     G = build_from_json(extraction)
     sources = {G.nodes[n]["source_file"] for n in G.nodes()}
-    assert sources == {"src/middleware/auth.py"}
+    assert sources == {"src/middleware/auth.md"}
 
 
 def test_build_merges_multiple_extractions():
@@ -85,7 +85,7 @@ def test_none_file_type_defaults_to_concept(capsys):
     ext = {
         "nodes": [
             {"id": "n1", "label": "Stub", "file_type": None, "source_file": "a.py"},
-            {"id": "n2", "label": "Real", "file_type": "code", "source_file": "b.py"},
+            {"id": "n2", "label": "Real", "file_type": "document", "source_file": "b.md"},
         ],
         "edges": [],
         "input_tokens": 0,
@@ -96,7 +96,7 @@ def test_none_file_type_defaults_to_concept(capsys):
     assert "invalid file_type" not in err
     # The legacy node still exists in the graph and has been canonicalized
     assert G.nodes["n1"]["file_type"] == "concept"
-    assert G.nodes["n2"]["file_type"] == "code"
+    assert G.nodes["n2"]["file_type"] == "document"
 
 
 def test_missing_file_type_defaults_to_concept(capsys):
@@ -139,7 +139,10 @@ def test_file_type_synonym_mapping():
             {"id": "n2", "label": "Tool", "file_type": "tool", "source_file": "b.py"},
             {"id": "n3", "label": "Pat", "file_type": "pattern", "source_file": "c.md"},
         ],
-        "edges": [],
+        "edges": [
+            {"source": "n2", "target": "n1", "relation": "references",
+             "confidence": "EXTRACTED", "source_file": "b.py", "weight": 1.0},
+        ],
         "input_tokens": 0,
         "output_tokens": 0,
     }
@@ -147,6 +150,31 @@ def test_file_type_synonym_mapping():
     assert G.nodes["n1"]["file_type"] == "document"
     assert G.nodes["n2"]["file_type"] == "code"
     assert G.nodes["n3"]["file_type"] == "concept"
+
+
+def test_build_prunes_isolated_code_nodes_but_keeps_isolated_non_code():
+    """Synthetic code symbols with no edges add noise; standalone docs/images are valid leaves."""
+    ext = {
+        "nodes": [
+            {"id": "orphan_code", "label": "UnusedHelper", "file_type": "code", "source_file": "a.py"},
+            {"id": "linked_code", "label": "Used", "file_type": "code", "source_file": "b.py"},
+            {"id": "doc", "label": "Design Note", "file_type": "document", "source_file": "doc.md"},
+            {"id": "image", "label": "Diagram", "file_type": "image", "source_file": "diagram.png"},
+        ],
+        "edges": [
+            {"source": "linked_code", "target": "doc", "relation": "references",
+             "confidence": "EXTRACTED", "source_file": "b.py", "weight": 1.0},
+        ],
+        "input_tokens": 0,
+        "output_tokens": 0,
+    }
+
+    G = build_from_json(ext)
+
+    assert "orphan_code" not in G
+    assert "linked_code" in G
+    assert "doc" in G
+    assert "image" in G
 
 
 def test_build_merge_preserves_call_edge_direction(tmp_path):

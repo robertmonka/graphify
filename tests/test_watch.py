@@ -82,6 +82,44 @@ def test_check_update_does_not_clear_flag(tmp_path):
     assert flag.exists()
 
 
+def test_check_update_detects_changed_document_from_manifest(tmp_path, capsys):
+    """The agent reminder should fire for changed non-code files even without a flag."""
+    from graphify.detect import save_manifest
+    from graphify.watch import check_update
+
+    doc = tmp_path / "notes.md"
+    doc.write_text("# old\n", encoding="utf-8")
+    manifest = tmp_path / "graphify-out" / "manifest.json"
+    save_manifest({"document": [str(doc)]}, manifest_path=str(manifest))
+
+    old_mtime = doc.stat().st_mtime
+    doc.write_text("# new\n", encoding="utf-8")
+    os.utime(doc, (old_mtime + 2, old_mtime + 2))
+
+    assert check_update(tmp_path, scan_manifest=True) is True
+    out = capsys.readouterr().out
+    assert "Pending non-code changes" in out
+    assert "graphify --update" in out
+
+
+def test_check_update_ignores_code_only_manifest_changes(tmp_path, capsys):
+    """Code-only changes should not trigger the semantic update reminder."""
+    from graphify.detect import save_manifest
+    from graphify.watch import check_update
+
+    src = tmp_path / "app.py"
+    src.write_text("x = 1\n", encoding="utf-8")
+    manifest = tmp_path / "graphify-out" / "manifest.json"
+    save_manifest({"code": [str(src)]}, manifest_path=str(manifest))
+
+    old_mtime = src.stat().st_mtime
+    src.write_text("x = 2\n", encoding="utf-8")
+    os.utime(src, (old_mtime + 2, old_mtime + 2))
+
+    assert check_update(tmp_path, scan_manifest=True) is True
+    assert capsys.readouterr().out == ""
+
+
 def test_watch_raises_without_watchdog(tmp_path, monkeypatch):
     import builtins
     real_import = builtins.__import__
