@@ -1035,6 +1035,7 @@ def _agents_install(project_dir: Path, platform: str) -> None:
 
     if platform == "codex":
         _install_codex_hook(project_dir or Path("."))
+        print("  Codex trust       ->  open /hooks and choose Trust before the hook can run")
     elif platform == "opencode":
         _install_opencode_plugin(project_dir or Path("."))
 

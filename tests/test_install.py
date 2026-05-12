@@ -282,6 +282,13 @@ def test_codex_agents_install_writes_agents_md(tmp_path):
     assert "GRAPH_REPORT.md" in agents_md.read_text()
 
 
+def test_codex_agents_install_mentions_hook_trust(tmp_path, capsys):
+    _agents_install(tmp_path, "codex")
+    out = capsys.readouterr().out
+    assert "/hooks" in out
+    assert "Trust" in out
+
+
 def test_opencode_agents_install_writes_agents_md(tmp_path):
     _agents_install(tmp_path, "opencode")
     assert (tmp_path / "AGENTS.md").exists()

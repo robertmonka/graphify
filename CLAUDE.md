@@ -7,5 +7,3 @@ Rules:
 - If graphify-out/wiki/index.md exists, navigate it instead of reading raw files.
 - For cross-module questions, prefer `graphify query "<question>"`, `graphify path "<A>" "<B>"`, or `graphify explain "<concept>"` over raw file search.
 - After modifying code files in this session, run `graphify update .` to keep the graph current (AST-only, no API cost).
-
-When the user types `/graphify`, invoke the `skill` tool with `skill: "graphify"` before doing anything else.
