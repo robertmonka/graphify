@@ -215,14 +215,15 @@ After transcription:
 
 This step has two parts: **structural extraction** (deterministic, free) and **semantic extraction** (LLM, costs tokens).
 
-**Before dispatching subagents:** check whether `GEMINI_API_KEY` or `GOOGLE_API_KEY` is set. If neither is set, print this one-liner to the user:
+**Before dispatching subagents:** check whether `MOONSHOT_API_KEY`, `GEMINI_API_KEY`, or `GOOGLE_API_KEY` is set. If none are set, print these one-liners to the user:
+> Tip: set `MOONSHOT_API_KEY` to use Kimi K2.6 for semantic extraction - cheaper, richer graphs (`pip install 'graphifyy[kimi]'`).
 > Tip: set `GEMINI_API_KEY` or `GOOGLE_API_KEY` to use Gemini for semantic extraction (`pip install 'graphifyy[gemini]'`).
 
-Print it once, then continue. If `GEMINI_API_KEY` or `GOOGLE_API_KEY` IS set, use `graphify.llm.extract_corpus_parallel(files, backend="gemini")` for semantic extraction instead of dispatching Claude subagents. The default Gemini model is `gemini-3-flash-preview`; set `GRAPHIFY_GEMINI_MODEL` or pass `--model` in headless CLI flows to override it.
+Print them once, then continue. If `MOONSHOT_API_KEY` IS set, use `graphify.llm.extract_corpus_parallel(files, backend="kimi")` for semantic extraction instead of dispatching assistant subagents. If Kimi is not set but `GEMINI_API_KEY` or `GOOGLE_API_KEY` IS set, use `graphify.llm.extract_corpus_parallel(files, backend="gemini")` instead. The default Gemini model is `gemini-3-flash-preview`; set `GRAPHIFY_GEMINI_MODEL` or pass `--model` in headless CLI flows to override it.
 
-> **No other API keys are read.** If `GEMINI_API_KEY`/`GOOGLE_API_KEY` are unset, fall straight through to Claude Code subagent dispatch (Part B below) — the host session itself is the LLM. graphify does **not** read `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or any other provider key from the environment. If a host agent prompts the user for `ANTHROPIC_API_KEY` to run extraction, that prompt is a misread of this skill — ignore it and dispatch subagents as written.
+> **No other API keys are read.** If `MOONSHOT_API_KEY`, `GEMINI_API_KEY`, and `GOOGLE_API_KEY` are unset, fall straight through to Claude Code subagent dispatch (Part B below) — the host session itself is the LLM. graphify does **not** read `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or any other provider key from the environment. If a host agent prompts the user for `ANTHROPIC_API_KEY` to run extraction, that prompt is a misread of this skill — ignore it and dispatch subagents as written.
 
-**Run Part A (AST) and Part B (semantic) in parallel. Dispatch all semantic subagents AND start AST extraction in the same message. Both can run simultaneously since they operate on different file types. Merge results in Part C as before.**
+**Run Part A (AST) and Part B (semantic) in parallel.** If a Kimi or Gemini fast path is active, run Part A and direct extraction concurrently where possible. Otherwise, dispatch all semantic subagents AND start AST extraction in the same message. Both can run simultaneously since they operate on different file types. Merge results in Part C as before.
 
 Note: Parallelizing AST + semantic saves 5-15s on large corpora. AST is deterministic and fast; start it while subagents are processing docs/papers.
 
@@ -287,6 +288,36 @@ print(f'Cache: {len(all_files)-len(uncached)} files hit, {len(uncached)} files n
 ```
 
 Only dispatch subagents for files listed in `graphify-out/.graphify_uncached.txt`. If all files are cached, skip to Part C directly.
+
+**Kimi fast path (when `MOONSHOT_API_KEY` is set)**
+
+If `MOONSHOT_API_KEY` is set and there are uncached files, run direct Kimi extraction instead of Step B1 and Step B2:
+
+```bash
+$(cat graphify-out/.graphify_python) -c "
+import json
+from pathlib import Path
+from graphify.llm import estimate_cost, extract_corpus_parallel
+
+files = [Path(line.strip()) for line in Path('graphify-out/.graphify_uncached.txt').read_text(encoding=\"utf-8\").splitlines() if line.strip()]
+
+def on_chunk_done(idx, total, result):
+    nodes = len(result.get('nodes', []))
+    edges = len(result.get('edges', []))
+    print(f'Kimi: chunk {idx + 1}/{total} -> {nodes} nodes, {edges} edges')
+
+if files:
+    result = extract_corpus_parallel(files, backend=\"kimi\", root=Path('.'), chunk_size=20, on_chunk_done=on_chunk_done)
+else:
+    result = {'nodes': [], 'edges': [], 'hyperedges': [], 'input_tokens': 0, 'output_tokens': 0}
+
+Path('graphify-out/.graphify_semantic_new.json').write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding=\"utf-8\")
+cost = estimate_cost('kimi', result.get('input_tokens', 0), result.get('output_tokens', 0))
+print(f'Kimi semantic: {len(result.get(\"nodes\", []))} nodes, {len(result.get(\"edges\", []))} edges, estimated ${cost:.4f}')
+"
+```
+
+After this completes, skip Step B1 and Step B2 and continue at Step B3. If the command fails because the OpenAI-compatible SDK is missing, install the extra first: `pip install 'graphifyy[kimi]'` or `pip install openai`. Do not silently fall back to assistant subagents when `MOONSHOT_API_KEY` is set.
 
 **Step B1 - Split into chunks**
 
@@ -382,6 +413,8 @@ CHUNK_PATH
 ```
 
 **Step B3 - Collect, cache, and merge**
+
+If the Kimi fast path was used, skip the subagent wait/chunk checks below. The success signal is `graphify-out/.graphify_semantic_new.json`; continue with cache save/merge using that file.
 
 Wait for all subagents. For each result:
 - Check that `graphify-out/.graphify_chunk_NN.json` exists on disk — this is the success signal
@@ -1013,7 +1046,7 @@ Supported URL types (auto-detected):
 - Twitter/X → fetched via oEmbed, saved as `.md` with tweet text and author
 - arXiv → abstract + metadata saved as `.md`
 - PDF → downloaded as `.pdf`
-- Images (.png/.jpg/.webp) → downloaded, Claude vision extracts on next run
+- Images (.png/.jpg/.webp) → downloaded, assistant vision extracts on next run
 - Any webpage → converted to markdown via html2text
 
 ---

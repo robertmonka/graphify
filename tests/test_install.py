@@ -119,6 +119,16 @@ def test_shared_skill_documents_platform_adapter_table():
         assert name in skill
 
 
+def test_shared_skill_documents_kimi_fast_path():
+    """The shared skill documents direct Kimi extraction before subagent fallback."""
+    import graphify
+    skill = (Path(graphify.__file__).parent / "skill.md").read_text()
+    assert "MOONSHOT_API_KEY" in skill
+    assert "Kimi fast path" in skill
+    assert 'backend="kimi"' in skill
+    assert "graphifyy[kimi]" in skill
+
+
 def test_all_skill_files_exist_in_package():
     """Legacy platform skill files remain packaged for compatibility/reference."""
     import graphify
