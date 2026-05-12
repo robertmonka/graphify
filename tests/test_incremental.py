@@ -54,4 +54,5 @@ def test_no_incremental_without_manifest(tmp_path):
     """Without manifest.json, full scan message is shown (not incremental)."""
     docs = _make_docs_corpus(tmp_path)
     r = _run(["extract", str(docs)], tmp_path)
-    assert "incremental" not in r.stdout
+    assert "[graphify extract] incremental scan" not in r.stdout
+    assert "[graphify extract] incremental summary" not in r.stdout

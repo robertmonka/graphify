@@ -160,6 +160,8 @@ disown 2>/dev/null || true
 
 def _git_root(path: Path) -> Path | None:
     """Walk up to find .git directory."""
+    if not path.exists():
+        return None
     current = path.resolve()
     for parent in [current, *current.parents]:
         if (parent / ".git").exists():

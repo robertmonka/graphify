@@ -138,8 +138,9 @@ def test_detect_follows_symlinked_file(tmp_path):
     assert any("link.py" in f for f in code)
 
 
-def test_graphifyignore_hermetic_without_vcs(tmp_path):
+def test_graphifyignore_hermetic_without_vcs(tmp_path, monkeypatch):
     """Without a VCS root, parent .graphifyignore does NOT apply (hermetic)."""
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
     (tmp_path / ".graphifyignore").write_text("vendor/\n")
     sub = tmp_path / "packages" / "mylib"
     sub.mkdir(parents=True)
