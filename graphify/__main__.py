@@ -1,4 +1,4 @@
-"""graphify CLI - `graphify install` sets up the Claude Code skill."""
+"""graphify CLI - `graphify skill <platform>` installs assistant skills."""
 from __future__ import annotations
 import json
 import os
@@ -93,6 +93,11 @@ _PLATFORM_CONFIG: dict[str, dict] = {
         "skill_dst": Path(".agents") / "skills" / "graphify" / "SKILL.md",
         "claude_md": False,
     },
+    "cursor": {
+        "skill_file": _SHARED_SKILL_FILE,
+        "skill_dst": Path(".cursor") / "skills" / "graphify" / "SKILL.md",
+        "claude_md": False,
+    },
     "opencode": {
         "skill_file": _SHARED_SKILL_FILE,
         "skill_dst": Path(".config") / "opencode" / "skills" / "graphify" / "SKILL.md",
@@ -161,32 +166,31 @@ _PLATFORM_CONFIG: dict[str, dict] = {
 }
 
 
-def install(platform: str = "claude") -> None:
-    if platform == "gemini":
-        gemini_install()
-        return
-    if platform == "cursor":
-        _cursor_install(Path("."))
-        return
-    if platform not in _PLATFORM_CONFIG:
-        print(
-            f"error: unknown platform '{platform}'. Choose from: {', '.join(_PLATFORM_CONFIG)}, gemini, cursor",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+def _skill_source(skill_file: str) -> Path:
+    return Path(__file__).parent / skill_file
 
-    cfg = _PLATFORM_CONFIG[platform]
-    skill_src = Path(__file__).parent / cfg["skill_file"]
+
+def _platform_skill_source(platform_name: str) -> Path:
+    return _skill_source(_PLATFORM_CONFIG[platform_name]["skill_file"])
+
+
+def _platform_skill_destination(platform_name: str) -> Path:
+    if platform_name in ("claude", "windows") and os.environ.get("CLAUDE_CONFIG_DIR"):
+        return Path(os.environ["CLAUDE_CONFIG_DIR"]) / "skills" / "graphify" / "SKILL.md"
+    return Path.home() / _PLATFORM_CONFIG[platform_name]["skill_dst"]
+
+
+def _gemini_skill_destination() -> Path:
+    if platform.system() == "Windows":
+        return Path.home() / ".agents" / "skills" / "graphify" / "SKILL.md"
+    return Path.home() / ".gemini" / "skills" / "graphify" / "SKILL.md"
+
+
+def _copy_skill_file(skill_src: Path, skill_dst: Path) -> Path:
     if not skill_src.exists():
-        print(f"error: {cfg['skill_file']} not found in package - reinstall graphify", file=sys.stderr)
+        print(f"error: {skill_src.name} not found in package - reinstall graphify", file=sys.stderr)
         sys.exit(1)
 
-    import os as _os
-    if platform in ("claude", "windows") and _os.environ.get("CLAUDE_CONFIG_DIR"):
-        _claude_base = Path(_os.environ["CLAUDE_CONFIG_DIR"])
-        skill_dst = _claude_base / "skills" / "graphify" / "SKILL.md"
-    else:
-        skill_dst = Path.home() / cfg["skill_dst"]
     skill_dst.parent.mkdir(parents=True, exist_ok=True)
     tmp_dst = skill_dst.with_suffix(skill_dst.suffix + ".tmp")
     try:
@@ -200,6 +204,73 @@ def install(platform: str = "claude") -> None:
         raise
     (skill_dst.parent / ".graphify_version").write_text(__version__, encoding="utf-8")
     print(f"  skill installed  ->  {skill_dst}")
+    return skill_dst
+
+
+def _remove_skill_file(skill_dst: Path, cleanup_levels: int = 3) -> bool:
+    removed = False
+    if skill_dst.exists():
+        skill_dst.unlink()
+        removed = True
+    version_file = skill_dst.parent / ".graphify_version"
+    if version_file.exists():
+        version_file.unlink()
+    d = skill_dst.parent
+    for _ in range(cleanup_levels):
+        try:
+            d.rmdir()
+        except OSError:
+            break
+        d = d.parent
+    return removed
+
+
+def _default_install_platform() -> str:
+    return "windows" if platform.system() == "Windows" else "claude"
+
+
+def _deprecated_alias(old: str, new: str) -> None:
+    print(f"warning: '{old}' is a deprecated alias; use '{new}' instead.", file=sys.stderr)
+
+
+def _print_skill_done() -> None:
+    print()
+    print("Done. Open your AI coding assistant and type:")
+    print()
+    print("  /graphify .")
+    print()
+
+
+def _print_skill_usage() -> None:
+    platforms = ", ".join([*_PLATFORM_CONFIG, "gemini"])
+    print("Usage: graphify skill <platform> | graphify skill remove <platform>")
+    print(f"Platforms: {platforms}")
+
+
+def _print_setup_usage() -> None:
+    print("Usage: graphify setup <platform> | graphify setup remove <platform>")
+    print(
+        "Platforms: claude, codex, opencode, aider, claw, droid, trae, trae-cn, "
+        "gemini, cursor, vscode, copilot, antigravity, hermes, kiro, pi"
+    )
+
+
+def _install_user_skill(platform_name: str) -> None:
+    if platform_name == "gemini":
+        _copy_skill_file(_skill_source(_SHARED_SKILL_FILE), _gemini_skill_destination())
+        _refresh_all_version_stamps()
+        _print_skill_done()
+        return
+
+    if platform_name not in _PLATFORM_CONFIG:
+        print(
+            f"error: unknown platform '{platform_name}'. Choose from: {', '.join(_PLATFORM_CONFIG)}, gemini",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    cfg = _PLATFORM_CONFIG[platform_name]
+    _copy_skill_file(_platform_skill_source(platform_name), _platform_skill_destination(platform_name))
 
     if cfg["claude_md"]:
         # Register in ~/.claude/CLAUDE.md (Claude Code only)
@@ -216,23 +287,137 @@ def install(platform: str = "claude") -> None:
             claude_md.write_text(_SKILL_REGISTRATION.lstrip(), encoding="utf-8")
             print(f"  CLAUDE.md        ->  created at {claude_md}")
 
-    if platform == "opencode":
-        _install_opencode_plugin(Path("."))
-
     # Refresh version stamps in all other previously-installed skill dirs so
     # stale-version warnings don't fire for platforms not explicitly re-installed.
     _refresh_all_version_stamps()
 
-    print()
-    print("Done. Open your AI coding assistant and type:")
-    print()
-    print("  /graphify .")
-    print()
+    _print_skill_done()
+
+
+def install(platform: str = "claude") -> None:
+    _install_user_skill(platform)
+
+
+def _parse_install_args(args: list[str]) -> str:
+    selected_platform: str | None = None
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg.startswith("--platform="):
+            candidate = arg.split("=", 1)[1]
+            if selected_platform and selected_platform != candidate:
+                print("error: specify install platform only once", file=sys.stderr)
+                sys.exit(1)
+            selected_platform = candidate
+            i += 1
+        elif arg == "--platform":
+            if i + 1 >= len(args):
+                print("error: --platform requires a value", file=sys.stderr)
+                sys.exit(1)
+            candidate = args[i + 1]
+            if selected_platform and selected_platform != candidate:
+                print("error: specify install platform only once", file=sys.stderr)
+                sys.exit(1)
+            selected_platform = candidate
+            i += 2
+        elif arg.startswith("-"):
+            print(f"error: unknown install option '{arg}'", file=sys.stderr)
+            sys.exit(1)
+        else:
+            if selected_platform and selected_platform != arg:
+                print("error: specify install platform only once", file=sys.stderr)
+                sys.exit(1)
+            selected_platform = arg
+            i += 1
+    return selected_platform or _default_install_platform()
+
+
+def _parse_named_command_args(args: list[str], default_platform: str | None = None) -> tuple[str | None, bool]:
+    platform_name = default_platform
+    remove = False
+    positionals = [arg for arg in args if not arg.startswith("-")]
+
+    if not positionals:
+        return platform_name, remove
+
+    first = positionals[0]
+    if first in ("install", "add"):
+        if len(positionals) > 1:
+            platform_name = positionals[1]
+    elif first in ("remove", "rm", "uninstall"):
+        remove = True
+        if len(positionals) > 1:
+            platform_name = positionals[1]
+    else:
+        platform_name = first
+        if len(positionals) > 1 and positionals[1] in ("remove", "rm", "uninstall"):
+            remove = True
+
+    return platform_name, remove
+
+
+def _skill_install(platform_name: str) -> None:
+    install(platform=platform_name)
+
+
+def _skill_uninstall(platform_name: str) -> None:
+    if platform_name == "gemini":
+        skill_dst = _gemini_skill_destination()
+    elif platform_name in _PLATFORM_CONFIG:
+        skill_dst = _platform_skill_destination(platform_name)
+    else:
+        print(
+            f"error: unknown skill platform '{platform_name}'. Choose from: {', '.join(_PLATFORM_CONFIG)}, gemini",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    if _remove_skill_file(skill_dst):
+        print(f"  skill removed    ->  {skill_dst}")
+    else:
+        print("nothing to remove")
+
+
+def _setup_platform(platform_name: str, remove: bool = False) -> None:
+    project_dir = Path(".")
+
+    if platform_name == "claude":
+        claude_uninstall(project_dir) if remove else claude_install(project_dir)
+    elif platform_name == "gemini":
+        gemini_uninstall(project_dir) if remove else gemini_install(project_dir)
+    elif platform_name == "cursor":
+        _cursor_uninstall(project_dir) if remove else _cursor_install(project_dir)
+    elif platform_name == "vscode":
+        vscode_uninstall(project_dir) if remove else vscode_install(project_dir)
+    elif platform_name == "copilot":
+        _skill_uninstall("copilot") if remove else install(platform="copilot")
+    elif platform_name == "kiro":
+        _kiro_uninstall(project_dir) if remove else _kiro_install(project_dir)
+    elif platform_name == "pi":
+        _skill_uninstall("pi") if remove else install("pi")
+    elif platform_name == "antigravity":
+        _antigravity_uninstall(project_dir) if remove else _antigravity_install(project_dir)
+    elif platform_name in ("aider", "codex", "opencode", "claw", "droid", "trae", "trae-cn", "hermes"):
+        if remove:
+            _agents_uninstall(project_dir, platform=platform_name)
+            if platform_name == "codex":
+                _uninstall_codex_hook(project_dir)
+        else:
+            _agents_install(project_dir, platform_name)
+    else:
+        print(
+            "error: unknown setup platform "
+            f"'{platform_name}'. Choose from: claude, codex, opencode, aider, claw, droid, trae, trae-cn, "
+            "gemini, cursor, vscode, copilot, antigravity, hermes, kiro, pi",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
 
 def _print_install_usage() -> None:
-    platforms = ", ".join([*_PLATFORM_CONFIG, "gemini", "cursor"])
+    platforms = ", ".join([*_PLATFORM_CONFIG, "gemini"])
     print("Usage: graphify install [--platform P|P]")
+    print("Deprecated alias for: graphify skill <platform>")
     print(f"Platforms: {platforms}")
 
 
@@ -1086,7 +1271,7 @@ def main() -> None:
     # Skip during install/uninstall (hook writes trigger a fresh check anyway).
     # Skip during hook-check — it runs on every editor tool use and must be silent.
     # Deduplicate paths so platforms sharing the same install dir don't warn twice.
-    _silent_cmds = {"install", "uninstall", "hook-check"}
+    _silent_cmds = {"skill", "setup", "install", "uninstall", "hook-check"}
     if not any(arg in _silent_cmds for arg in sys.argv):
         for skill_dst in {Path.home() / cfg["skill_dst"] for cfg in _PLATFORM_CONFIG.values()}:
             _check_skill_version(skill_dst)
@@ -1099,7 +1284,11 @@ def main() -> None:
         print("Usage: graphify <command>")
         print()
         print("Commands:")
-        print("  install [--platform P]  copy skill to platform config dir (claude|windows|codex|opencode|aider|claw|droid|trae|trae-cn|gemini|cursor|antigravity|hermes|kiro|pi)")
+        print("  skill <platform>        install/refresh a user-level assistant skill")
+        print("  skill remove <platform> remove a user-level assistant skill")
+        print("  setup <platform>        configure the current project for an assistant")
+        print("  setup remove <platform> remove graphify project configuration")
+        print("  install [--platform P]  deprecated alias for: skill <platform>")
         print("  uninstall               remove graphify from all detected platforms in one shot")
         print("    --purge                 also delete graphify-out/ directory")
         print("  path \"A\" \"B\"            shortest path between two nodes in graph.json")
@@ -1165,38 +1354,8 @@ def main() -> None:
         print("  hook install            install post-commit/post-checkout git hooks (all platforms)")
         print("  hook uninstall          remove git hooks")
         print("  hook status             check if git hooks are installed")
-        print("  gemini install          write GEMINI.md section + BeforeTool hook (Gemini CLI)")
-        print("  gemini uninstall        remove GEMINI.md section + BeforeTool hook")
-        print("  cursor install          write .cursor/rules/graphify.mdc (Cursor)")
-        print("  cursor uninstall        remove .cursor/rules/graphify.mdc")
-        print("  claude install          write graphify section to CLAUDE.md + PreToolUse hook (Claude Code)")
-        print("  claude uninstall        remove graphify section from CLAUDE.md + PreToolUse hook")
-        print("  codex install           write graphify section to AGENTS.md (Codex)")
-        print("  codex uninstall         remove graphify section from AGENTS.md")
-        print("  opencode install        write graphify section to AGENTS.md + tool.execute.before plugin (OpenCode)")
-        print("  opencode uninstall      remove graphify section from AGENTS.md + plugin")
-        print("  aider install           write graphify section to AGENTS.md (Aider)")
-        print("  aider uninstall         remove graphify section from AGENTS.md")
-        print("  copilot install         copy graphify skill to ~/.copilot/skills (GitHub Copilot CLI)")
-        print("  copilot uninstall       remove graphify skill from ~/.copilot/skills")
-        print("  vscode install          configure VS Code Copilot Chat (skill + .github/copilot-instructions.md)")
-        print("  vscode uninstall        remove VS Code Copilot Chat configuration")
-        print("  claw install            write graphify section to AGENTS.md (OpenClaw)")
-        print("  claw uninstall          remove graphify section from AGENTS.md")
-        print("  droid install           write graphify section to AGENTS.md (Factory Droid)")
-        print("  droid uninstall        remove graphify section from AGENTS.md")
-        print("  trae install            write graphify section to AGENTS.md (Trae)")
-        print("  trae uninstall         remove graphify section from AGENTS.md")
-        print("  trae-cn install         write graphify section to AGENTS.md (Trae CN)")
-        print("  trae-cn uninstall      remove graphify section from AGENTS.md")
-        print("  antigravity install     write .agents/rules + .agents/workflows + skill (Google Antigravity)")
-        print("  antigravity uninstall   remove .agents/rules, .agents/workflows, and skill")
-        print("  hermes install          write skill to ~/.hermes/skills/graphify/ (Hermes)")
-        print("  hermes uninstall        remove skill from ~/.hermes/skills/graphify/")
-        print("  kiro install            write skill to .kiro/skills/graphify/ + steering file (Kiro IDE/CLI)")
-        print("  kiro uninstall          remove skill + steering file")
-        print("  pi install              write skill to ~/.pi/agent/skills/graphify/ (Pi coding agent)")
-        print("  pi uninstall            remove skill from ~/.pi/agent/skills/graphify/")
+        print("  <platform> install      deprecated alias for: setup <platform>")
+        print("  <platform> uninstall    deprecated alias for: setup remove <platform>")
         print()
         return
 
@@ -1206,160 +1365,51 @@ def main() -> None:
     # and stops — prevents flags from silently triggering destructive subcommands
     # (e.g. "cursor install --help" was silently installing into Cursor, #821).
     # Exempt: free-text commands (user string may contain these tokens), and
-    # "install"/"uninstall" which have their own per-subcommand help handlers.
-    _FREE_TEXT_CMDS = {"query", "explain", "path", "save-result", "install", "uninstall"}
-    if cmd not in _FREE_TEXT_CMDS and any(a in {"-h", "--help", "-?"} for a in sys.argv[2:]):
+    # commands with their own subcommand help handlers.
+    _HELP_HANDLED_CMDS = {"skill", "setup", "install", "uninstall"}
+    _FREE_TEXT_CMDS = {"query", "explain", "path", "save-result"}
+    if cmd not in _HELP_HANDLED_CMDS and cmd not in _FREE_TEXT_CMDS and any(a in {"-h", "--help", "-?"} for a in sys.argv[2:]):
         print(f"Run 'graphify --help' for full usage.")
         return
 
-    if cmd == "install":
-        # Default to windows platform on Windows, claude elsewhere
-        default_platform = "windows" if platform.system() == "Windows" else "claude"
-        selected_platform: str | None = None
-        args = sys.argv[2:]
-        i = 0
-        while i < len(args):
-            arg = args[i]
-            if arg in ("-h", "--help"):
-                _print_install_usage()
-                return
-            if arg.startswith("--platform="):
-                candidate = arg.split("=", 1)[1]
-                if selected_platform and selected_platform != candidate:
-                    print("error: specify install platform only once", file=sys.stderr)
-                    sys.exit(1)
-                selected_platform = candidate
-                i += 1
-            elif arg == "--platform":
-                if i + 1 >= len(args):
-                    print("error: --platform requires a value", file=sys.stderr)
-                    sys.exit(1)
-                candidate = args[i + 1]
-                if selected_platform and selected_platform != candidate:
-                    print("error: specify install platform only once", file=sys.stderr)
-                    sys.exit(1)
-                selected_platform = candidate
-                i += 2
-            elif arg.startswith("-"):
-                print(f"error: unknown install option '{arg}'", file=sys.stderr)
-                sys.exit(1)
-            else:
-                if selected_platform and selected_platform != arg:
-                    print("error: specify install platform only once", file=sys.stderr)
-                    sys.exit(1)
-                selected_platform = arg
-                i += 1
-        chosen_platform = selected_platform or default_platform
+    if cmd == "skill":
+        if any(a in {"-h", "--help", "-?"} for a in sys.argv[2:]):
+            _print_skill_usage()
+            return
+        platform_name, remove = _parse_named_command_args(sys.argv[2:])
+        if not platform_name:
+            _print_skill_usage()
+            sys.exit(1)
+        _skill_uninstall(platform_name) if remove else _skill_install(platform_name)
+    elif cmd == "setup":
+        if any(a in {"-h", "--help", "-?"} for a in sys.argv[2:]):
+            _print_setup_usage()
+            return
+        platform_name, remove = _parse_named_command_args(sys.argv[2:])
+        if not platform_name:
+            _print_setup_usage()
+            sys.exit(1)
+        _setup_platform(platform_name, remove=remove)
+    elif cmd == "install":
+        if any(a in {"-h", "--help", "-?"} for a in sys.argv[2:]):
+            _print_install_usage()
+            return
+        chosen_platform = _parse_install_args(sys.argv[2:])
+        _deprecated_alias("graphify install", f"graphify skill {chosen_platform}")
         install(platform=chosen_platform)
     elif cmd == "uninstall":
         purge = "--purge" in sys.argv[2:]
         uninstall_all(purge=purge)
-    elif cmd == "claude":
+    elif cmd in ("claude", "gemini", "cursor", "vscode", "copilot", "kiro", "pi", "antigravity", "aider", "codex", "opencode", "claw", "droid", "trae", "trae-cn", "hermes"):
         subcmd = sys.argv[2] if len(sys.argv) > 2 else ""
         if subcmd == "install":
-            claude_install()
+            _deprecated_alias(f"graphify {cmd} install", f"graphify setup {cmd}")
+            _setup_platform(cmd)
         elif subcmd == "uninstall":
-            claude_uninstall()
+            _deprecated_alias(f"graphify {cmd} uninstall", f"graphify setup remove {cmd}")
+            _setup_platform(cmd, remove=True)
         else:
-            print("Usage: graphify claude [install|uninstall]", file=sys.stderr)
-            sys.exit(1)
-    elif cmd == "gemini":
-        subcmd = sys.argv[2] if len(sys.argv) > 2 else ""
-        if subcmd == "install":
-            gemini_install()
-        elif subcmd == "uninstall":
-            gemini_uninstall()
-        else:
-            print("Usage: graphify gemini [install|uninstall]", file=sys.stderr)
-            sys.exit(1)
-    elif cmd == "cursor":
-        subcmd = sys.argv[2] if len(sys.argv) > 2 else ""
-        if subcmd == "install":
-            _cursor_install(Path("."))
-        elif subcmd == "uninstall":
-            _cursor_uninstall(Path("."))
-        else:
-            print("Usage: graphify cursor [install|uninstall]", file=sys.stderr)
-            sys.exit(1)
-    elif cmd == "vscode":
-        subcmd = sys.argv[2] if len(sys.argv) > 2 else ""
-        if subcmd == "install":
-            vscode_install()
-        elif subcmd == "uninstall":
-            vscode_uninstall()
-        else:
-            print("Usage: graphify vscode [install|uninstall]", file=sys.stderr)
-            sys.exit(1)
-    elif cmd == "copilot":
-        subcmd = sys.argv[2] if len(sys.argv) > 2 else ""
-        if subcmd == "install":
-            install(platform="copilot")
-        elif subcmd == "uninstall":
-            skill_dst = Path.home() / _PLATFORM_CONFIG["copilot"]["skill_dst"]
-            removed = []
-            if skill_dst.exists():
-                skill_dst.unlink()
-                removed.append(f"skill removed: {skill_dst}")
-            version_file = skill_dst.parent / ".graphify_version"
-            if version_file.exists():
-                version_file.unlink()
-            for d in (skill_dst.parent, skill_dst.parent.parent, skill_dst.parent.parent.parent):
-                try:
-                    d.rmdir()
-                except OSError:
-                    break
-            print("; ".join(removed) if removed else "nothing to remove")
-        else:
-            print("Usage: graphify copilot [install|uninstall]", file=sys.stderr)
-            sys.exit(1)
-    elif cmd == "kiro":
-        subcmd = sys.argv[2] if len(sys.argv) > 2 else ""
-        if subcmd == "install":
-            _kiro_install(Path("."))
-        elif subcmd == "uninstall":
-            _kiro_uninstall(Path("."))
-        else:
-            print("Usage: graphify kiro [install|uninstall]", file=sys.stderr)
-            sys.exit(1)
-    elif cmd == "pi":
-        subcmd = sys.argv[2] if len(sys.argv) > 2 else ""
-        if subcmd == "install":
-            install("pi")
-        elif subcmd == "uninstall":
-            skill_dst = Path.home() / ".pi" / "agent" / "skills" / "graphify" / "SKILL.md"
-            if skill_dst.exists():
-                skill_dst.unlink()
-                print(f"  skill removed    ->  {skill_dst}")
-            version_file = skill_dst.parent / ".graphify_version"
-            if version_file.exists():
-                version_file.unlink()
-            for d in (skill_dst.parent, skill_dst.parent.parent, skill_dst.parent.parent.parent):
-                try:
-                    d.rmdir()
-                except OSError:
-                    break
-        else:
-            print("Usage: graphify pi [install|uninstall]", file=sys.stderr)
-            sys.exit(1)
-    elif cmd in ("aider", "codex", "opencode", "claw", "droid", "trae", "trae-cn", "hermes"):
-        subcmd = sys.argv[2] if len(sys.argv) > 2 else ""
-        if subcmd == "install":
-            _agents_install(Path("."), cmd)
-        elif subcmd == "uninstall":
-            _agents_uninstall(Path("."), platform=cmd)
-            if cmd == "codex":
-                _uninstall_codex_hook(Path("."))
-        else:
-            print(f"Usage: graphify {cmd} [install|uninstall]", file=sys.stderr)
-            sys.exit(1)
-    elif cmd == "antigravity":
-        subcmd = sys.argv[2] if len(sys.argv) > 2 else ""
-        if subcmd == "install":
-            _antigravity_install(Path("."))
-        elif subcmd == "uninstall":
-            _antigravity_uninstall(Path("."))
-        else:
-            print("Usage: graphify antigravity [install|uninstall]", file=sys.stderr)
+            print(f"Usage: graphify setup [remove] {cmd}", file=sys.stderr)
             sys.exit(1)
     elif cmd == "hook":
         from graphify.hooks import install as hook_install, uninstall as hook_uninstall, status as hook_status

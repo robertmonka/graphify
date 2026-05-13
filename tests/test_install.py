@@ -1,4 +1,5 @@
 """Tests for graphify install --platform routing."""
+import json
 import os
 from pathlib import Path
 import sys
@@ -27,6 +28,18 @@ def _install(tmp_path, platform):
             install(platform=platform)
     finally:
         os.chdir(old_cwd)
+
+
+def _run_main(tmp_path, argv):
+    from graphify.__main__ import main
+    old_cwd = Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        with patch("graphify.__main__.Path.home", return_value=tmp_path), patch.object(sys, "argv", argv):
+            result = main()
+    finally:
+        os.chdir(old_cwd)
+    assert result in (None, 0)
 
 
 def test_install_default_claude(tmp_path):
@@ -95,6 +108,82 @@ def test_install_windows(tmp_path):
 def test_install_unknown_platform_exits(tmp_path):
     with pytest.raises(SystemExit):
         _install(tmp_path, "unknown")
+
+
+def test_legacy_install_parser_accepts_default_and_platform_forms():
+    from graphify.__main__ import _parse_install_args
+
+    assert _parse_install_args([]) == "claude"
+    assert _parse_install_args(["codex"]) == "codex"
+    assert _parse_install_args(["--platform", "codex"]) == "codex"
+    assert _parse_install_args(["--platform=codex"]) == "codex"
+
+
+def test_legacy_install_parser_uses_windows_default():
+    from graphify.__main__ import _parse_install_args
+
+    with patch("graphify.__main__.platform.system", return_value="Windows"):
+        assert _parse_install_args([]) == "windows"
+
+
+def test_named_command_parser_accepts_setup_and_remove_forms():
+    from graphify.__main__ import _parse_named_command_args
+
+    assert _parse_named_command_args([]) == (None, False)
+    assert _parse_named_command_args(["codex"]) == ("codex", False)
+    assert _parse_named_command_args(["install", "codex"]) == ("codex", False)
+    assert _parse_named_command_args(["remove", "codex"]) == ("codex", True)
+    assert _parse_named_command_args(["codex", "remove"]) == ("codex", True)
+
+
+def test_cli_skill_codex_installs_user_skill_only(tmp_path):
+    _run_main(tmp_path, ["graphify", "skill", "codex"])
+
+    assert (tmp_path / ".agents" / "skills" / "graphify" / "SKILL.md").exists()
+    assert not (tmp_path / "AGENTS.md").exists()
+    assert not (tmp_path / ".codex" / "hooks.json").exists()
+
+
+def test_cli_setup_codex_configures_project_only(tmp_path):
+    _run_main(tmp_path, ["graphify", "setup", "codex"])
+
+    assert (tmp_path / "AGENTS.md").exists()
+    hooks_path = tmp_path / ".codex" / "hooks.json"
+    assert hooks_path.exists()
+    hooks = json.loads(hooks_path.read_text(encoding="utf-8"))["hooks"]
+    assert hooks["SessionStart"] == [{
+        "hooks": [{"type": "command", "command": "graphify hook-check"}],
+    }]
+    assert not (tmp_path / ".agents" / "skills" / "graphify" / "SKILL.md").exists()
+
+
+def test_cli_install_positional_platform_is_deprecated_skill_alias(tmp_path, capsys):
+    _run_main(tmp_path, ["graphify", "install", "codex"])
+
+    captured = capsys.readouterr()
+    assert "deprecated alias" in captured.err
+    assert (tmp_path / ".agents" / "skills" / "graphify" / "SKILL.md").exists()
+    assert not (tmp_path / "AGENTS.md").exists()
+
+
+def test_cli_platform_install_is_deprecated_setup_alias(tmp_path, capsys):
+    _run_main(tmp_path, ["graphify", "codex", "install"])
+
+    captured = capsys.readouterr()
+    assert "deprecated alias" in captured.err
+    assert (tmp_path / "AGENTS.md").exists()
+    assert not (tmp_path / ".agents" / "skills" / "graphify" / "SKILL.md").exists()
+
+
+def test_cli_skill_and_setup_help_have_no_side_effects(tmp_path, capsys):
+    _run_main(tmp_path, ["graphify", "skill", "codex", "--help"])
+    _run_main(tmp_path, ["graphify", "setup", "codex", "--help"])
+
+    captured = capsys.readouterr()
+    assert "Usage: graphify skill" in captured.out
+    assert "Usage: graphify setup" in captured.out
+    assert not (tmp_path / ".agents").exists()
+    assert not (tmp_path / "AGENTS.md").exists()
 
 
 def test_install_platforms_copy_shared_skill_source(tmp_path):
